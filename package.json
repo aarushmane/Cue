@@ -13,7 +13,8 @@
     "test:e2e:memory": "playwright test",
     "test:e2e:auth": "playwright test -c playwright.auth.config.ts",
     "typecheck": "tsc --noEmit",
-    "seed:sql": "node scripts/gen-seed.mts"
+    "seed:sql": "node scripts/gen-seed.mts",
+    "test:db": "bash scripts/test-db.sh"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.8.0",

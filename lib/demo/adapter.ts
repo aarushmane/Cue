@@ -7,28 +7,28 @@
 // search on the next request). They are NOT durable and there is NO real authentication: the signed-in
 // employee is the seeded DEMO_STAFF. Every screen that uses them keeps a "Demo action" label.
 //
-// Each function mirrors a contract in docs/contracts.md and returns the same { status, code, error } shape,
-// so swapping to the real route is a one-line change per call:
+// Each function mirrors a contract in docs/contracts.md and returns the same { status, code, error } shape.
+// The real routes now exist (lib/staff/service.ts); the screens stay on these until the app has a staff sign-in
+// that can send a bearer token:
 //   reviewObservationDemo   → POST /api/observations/:id/review
 //   moveProductDemo         → PATCH /api/products/:id/location
 //   saveMapDraftDemo        → PUT /api/maps/:id/graph
-//   publishMapDemo          → map publish endpoint (not yet specified in contracts)
-//   submitShopperObservationDemo → shopper observation submission (not yet specified in contracts)
-//   getStaffSnapshotDemo    → GET /api/audit + observation/product/map reads
+//   publishMapDemo          → POST /api/maps/:id/publish
+//   submitShopperObservationDemo → POST /api/observations (no staff token needed: could switch now)
+//   getStaffSnapshotDemo    → GET /api/audit + observation/product/map reads (not built)
 //
 // When Supabase is configured, the shopper surface reads the real database, so writing to demo memory would
 // silently diverge. In that case these functions refuse with 503 instead of pretending to succeed.
 // ─────────────────────────────────────────────────────────────────────────────
-import { z } from "zod";
 import {
   getMaps, listAudit, listObservations, listProducts, moveProduct, publishMap, resetDemo, reviewObservation, saveDraft,
   saveMapDraft, submitShopperObservation,
 } from "../db/demoState";
 import { DEMO_STAFF } from "../seed/demo-review";
 import { DEMO_STORE } from "../seed/demo-store";
-import { LEVELS } from "../review/format";
 import type { DemoFail, DemoResult, StaffSnapshot } from "./types";
-import type { FloorPlan, Observation, ShelfLevel } from "../types";
+import type { FloorPlan, Observation } from "../types";
+import { Draft, Level, Plan, ReviewReq, Submission } from "./schemas";
 
 const STORE = DEMO_STORE.id;
 
@@ -54,39 +54,6 @@ function snapshot(): StaffSnapshot {
 }
 
 const withSnapshot = <T extends object>(r: T): T & { snapshot: StaffSnapshot } => ({ ...r, snapshot: snapshot() });
-
-// ───────────────────────────── Input schemas (untrusted client input) ─────────────────────────────
-
-const Level = z.enum(LEVELS as [ShelfLevel, ...ShelfLevel[]]);
-const Str = z.string().max(200);
-const Candidate = z.object({
-  name: Str, brand: Str, category: Str, size: Str, variant: Str, aisle: z.string().max(4), shelf: z.string().max(40),
-  level: z.union([Level, z.literal("")]),
-});
-const Draft = Candidate.extend({
-  match: z.string().max(40), targetVersion: z.number().int().nullable(), idOk: z.boolean(), locOk: z.boolean(),
-  idReset: z.boolean().optional(), locReset: z.boolean().optional(), obsVersion: z.number().int(),
-});
-const ReviewReq = z.object({
-  action: z.enum(["publish", "reject", "rescan"]),
-  observationId: z.string().max(40),
-  obsVersion: z.number().int(),
-  draft: Draft.optional(),
-  targetVersion: z.number().int().nullable().optional(),
-  reason: z.string().max(500).optional(),
-});
-const Point = z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) });
-const Plan = z.object({
-  mapId: z.string().max(60),
-  version: z.number().int(),
-  // The background is a local object URL in the demo (POST /api/media is not connected), so only its reference travels.
-  plan: z.object({ url: z.string().max(2000), name: z.string().max(200), kind: z.enum(["image", "pdf"]) }).nullable(),
-  aspect: z.number().positive().max(20),
-  nodes: z.array(Point.extend({ id: z.string().max(20), kind: z.enum(["entrance", "service", "walk", "junction", "shelf_approach", "aisle_marker"]) })).max(500),
-  edges: z.array(z.tuple([z.string().max(20), z.string().max(20)])).max(2000),
-  shelves: z.array(Point.extend({ key: z.string().max(40), id: z.string().max(40), w: z.number().min(0).max(1), h: z.number().min(0).max(1), anchor: z.string().max(20) })).max(500),
-  landmarks: z.array(Point.extend({ id: z.string().max(20), label: z.string().max(120), verified: z.boolean() })).max(200),
-});
 
 const invalid = (error: string): DemoFail => ({ ok: false, status: 422, code: "INVALID", error });
 
@@ -163,12 +130,6 @@ export async function resetDemoDataDemo(): Promise<DemoResult<{ snapshot: StaffS
 
 // ───────────────────────────── Shopper ─────────────────────────────
 
-const Submission = z.object({
-  consent: z.literal("allowed"),
-  confidence: z.enum(["High", "Medium", "Low"]),
-  evidence: z.string().max(300),
-  candidate: Candidate,
-});
 
 /**
  * A consented shopper observation. Structured text only: no image or video is accepted here.
