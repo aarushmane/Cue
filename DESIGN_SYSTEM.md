@@ -15,7 +15,7 @@ Do not display instructions about styling, shortcuts, implementation, or how the
 - Semantic CSS variables in `app/globals.css` are the source of truth. Use classes such as `bg-background`, `text-foreground`, `border-border`, and `ring-ring`; do not introduce raw colors in feature components.
 - Use `cn` (re-exported from `lib/utils.ts`) for conditional classes. Use class-variance-authority for shared component variants.
 - Use Lucide icons. Decorative icons have `aria-hidden="true"`; icon buttons have an accessible name and an action tooltip.
-- Keep domain logic outside UI primitives. Three.js owns rendering; shadcn owns the interface around it. Scene credentials, asset fetching, and Supabase code remain server-side.
+- Keep domain logic outside UI primitives. The Matterport Showcase embed owns the 3D scene and its navigation; shadcn owns the interface around it. Supabase code remains server-side.
 - Add only the components needed by a concrete workflow. Use the shadcn MCP to discover registry components and inspect examples; the CLI remains available with `npx shadcn add <component>`.
 
 ## Foundations
@@ -31,7 +31,7 @@ Do not display instructions about styling, shortcuts, implementation, or how the
 | Controls | Stable dimensions; 44 × 44 px for viewer icon controls and touch targets. A hover, label, or loading state must not resize the control. |
 | Borders/elevation | One semantic border for separation. Small shadows for floating controls/popovers; no card treatment for whole page sections. |
 | Motion | 120 ms for feedback, 180 ms for transitions. Honor reduced motion; no decorative continuous animation. |
-| Canvas | `--scene-background`, `--scene-material` (fallback shading for surfaces no panorama covers) and `--scene-marker` (floor sweep markers and the surface cursor) are the only intentional hex tokens, because Three.js consumes them directly. Lighting values describe illumination, not UI colors. |
+| Scene | The Matterport Showcase embed fills the viewport. `--scene-background` is the only intentional hex token: the surface shown while the embed loads. |
 
 The full shadcn semantic contract includes `background/foreground`, `card`, `popover`, `primary`, `secondary`, `muted`, `accent`, `destructive`, `border`, `input`, `ring`, `chart-1…5`, and `sidebar` pairs. Project status tokens add `success` and `warning`. Add new tokens centrally and document their purpose here.
 
@@ -56,15 +56,15 @@ Install future primitives from the same registry/style rather than reimplementin
 
 Every control needs default, hover, focus-visible, active, and disabled states. Async operations need loading, success, and actionable error behavior. Reserve space for changing content. Icon buttons need accessible names; status announcements use live regions. Loading visuals respect reduced motion. Keep focus indicators visible against both light and dark surfaces.
 
-For the scene, mouse/touch dragging changes the camera orientation (grab-style); selecting a floor point travels to the nearest visible sweep; scroll/pinch zooms; free walking stays near the sweep paths and settles onto the nearest sweep when input stops; keyboard movement applies only while the canvas is focused. Blurring the canvas or window clears held movement keys. Reset view restores the initial camera pose. Fullscreen uses the browser API and reflects its current state. Keep the camera and scene independent of panel or toolbar layout.
+For the scene, Matterport Showcase handles navigation (jumping between scan points, looking around, zoom). Reset view reloads the embed at the tour's start point. Fullscreen uses the browser API and reflects its current state. Keep the scene independent of panel or toolbar layout.
 
 Use semantic HTML first. Preserve Radix keyboard navigation, focus management, and disabled behavior. Make content wrap without clipping; do not use viewport-scaled typography or negative tracking. Readable labels and clear commands take priority over compactness.
 
 ## Verification and maintenance
 
 1. Run `npm run typecheck` and `npm run build` after frontend integration changes.
-2. Run `npm run check:ui` against the running app. This uses Playwright with installed Chrome, saves desktop/mobile screenshots, checks canvas pixels, movement/reset, hover tooltips, focused keyboard controls, responsive bounds, theme tokens, and a recoverable load failure.
-3. Inspect the screenshots. Confirm the real asset is nonblank, correctly framed, and visually legible; check that controls do not collide or overflow. Do not accept a passing DOM check as proof of a rendered 3D scene.
+2. Run `npm run check:ui` against the running app. This uses Playwright with installed Chrome (or `PW_CHANNEL=chromium`), saves desktop/mobile screenshots, checks that the Showcase embed loads and renders, reset, hover tooltips, fullscreen, responsive bounds, and theme tokens.
+3. Inspect the screenshots. Confirm the real asset is nonblank, correctly framed, and visually legible; check that controls do not collide or overflow. Do not accept a passing DOM check as proof of a rendered tour.
 4. When a dev server is needed, start it and share its actual URL. Reuse a server already serving this checkout; if its port belongs to something else, use another port.
 5. Document material changes to tokens, primitive variants, or interaction patterns here. Preserve the provided guidance below when updating this file.
 

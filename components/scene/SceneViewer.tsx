@@ -1,72 +1,37 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, Expand, LoaderCircle, RotateCcw, Shrink } from "lucide-react";
+import { Expand, LoaderCircle, RotateCcw, Shrink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import type { SceneManifest } from "@/lib/scene/types";
-import { createEngine } from "./engine";
+
+/**
+ * Matterport Showcase embed. Showcase owns navigation: select a floor marker (or use the arrow
+ * keys) to jump between scan points, drag to look around. `play=1` starts the tour without the
+ * play button and `qs=1` skips the fly-in, so visitors land at the start point.
+ */
+export function showcaseUrl(modelId: string) {
+  return `https://my.matterport.com/show/?${new URLSearchParams({ m: modelId, play: "1", qs: "1" })}`;
+}
 
 export function SceneViewer({ modelId, name }: { modelId: string; name: string }) {
-  const host = useRef<HTMLDivElement>(null);
   const viewport = useRef<HTMLElement>(null);
-  const resetView = useRef(() => {});
-  const [message, setMessage] = useState("Loading scene…");
-  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
-  const [attempt, setAttempt] = useState(0);
+  const [status, setStatus] = useState<"loading" | "ready">("loading");
+  const [session, setSession] = useState(0);
   const [fullscreen, setFullscreen] = useState(false);
   const [toolError, setToolError] = useState("");
 
   useEffect(() => {
-    const container = host.current!;
     const abort = new AbortController();
-    let dispose = () => {};
     document.addEventListener("fullscreenchange", () => setFullscreen(document.fullscreenElement === viewport.current), { signal: abort.signal });
+    return () => abort.abort();
+  }, []);
 
-    async function start() {
-      const manifestResponse = await fetch(`/api/scenes/${modelId}`, { signal: abort.signal });
-      const manifest = await manifestResponse.json() as SceneManifest & { error?: string };
-      if (!manifestResponse.ok) throw new Error(manifest.error || "Could not load the scene.");
-      const meshResponse = await fetch(manifest.mesh.url, { signal: abort.signal });
-      if (!meshResponse.ok) throw new Error("Could not load this scan's mesh.");
-      const meshSource = await meshResponse.text();
-      if (abort.signal.aborted) return;
-      const tokens = getComputedStyle(container);
-      const token = (name: string) => tokens.getPropertyValue(name).trim();
-      const engine = createEngine({
-        container,
-        manifest,
-        meshSource,
-        label: name,
-        signal: abort.signal,
-        tokens: { background: token("--scene-background"), material: token("--scene-material"), marker: token("--scene-marker") },
-        onReady() {
-          resetView.current = () => engine.resetView();
-          setMessage("");
-          setStatus("ready");
-        },
-      });
-      dispose = () => {
-        resetView.current = () => {};
-        engine.dispose();
-      };
-    }
-
-    start().catch((error: unknown) => {
-      if (!abort.signal.aborted) {
-        setStatus("error");
-        setMessage(error instanceof Error ? error.message : "Could not render the scene.");
-      }
-    });
-    return () => { abort.abort(); dispose(); };
-  }, [modelId, name, attempt]);
-
-  function retry() {
+  // Reloading the embed returns the visitor to the tour's start point.
+  function resetView() {
     setStatus("loading");
-    setMessage("Loading scene…");
-    setAttempt((value) => value + 1);
+    setSession((value) => value + 1);
   }
 
   async function toggleFullscreen() {
@@ -81,29 +46,26 @@ export function SceneViewer({ modelId, name }: { modelId: string; name: string }
 
   return (
     <main ref={viewport} className="scene" aria-label={name}>
-      <div ref={host} className="scene-canvas" aria-busy={status === "loading"} />
+      <iframe
+        key={session}
+        className="scene-embed"
+        src={showcaseUrl(modelId)}
+        title={`${name} — Matterport 3D tour`}
+        allow="fullscreen; xr-spatial-tracking"
+        allowFullScreen
+        aria-busy={status === "loading"}
+        onLoad={() => setStatus("ready")}
+      />
       {status === "loading" && (
         <div className="scene-status" role="status">
           <LoaderCircle className="size-6 animate-spin text-primary motion-reduce:animate-none" aria-hidden="true" />
-          <span className="sr-only">{message}</span>
-        </div>
-      )}
-      {status === "error" && (
-        <div className="scene-status">
-          <Alert variant="destructive" className="pointer-events-auto max-w-sm bg-popover">
-            <AlertTriangle aria-hidden="true" />
-            <AlertTitle>Scene unavailable</AlertTitle>
-            <AlertDescription className="break-words">
-              <p>{message}</p>
-              <Button variant="outline" size="sm" onClick={retry}><RotateCcw aria-hidden="true" />Retry</Button>
-            </AlertDescription>
-          </Alert>
+          <span className="sr-only">Loading scene…</span>
         </div>
       )}
       <div className="scene-toolbar flex items-center gap-1 rounded-lg border bg-popover p-1 shadow-sm" role="group" aria-label="Scene tools">
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon" className="size-11" aria-label="Reset view" disabled={status !== "ready"} onClick={() => resetView.current()}>
+            <Button variant="ghost" size="icon" className="size-11" aria-label="Reset view" disabled={status !== "ready"} onClick={resetView}>
               <RotateCcw aria-hidden="true" />
             </Button>
           </TooltipTrigger>

@@ -1,9 +1,9 @@
 # StoreGuide
 
-Voice-first indoor product finding for blind and low-vision shoppers, plus a Matterport-Showcase-style 3D walkthrough of each store's scan.
+Voice-first indoor product finding for blind and low-vision shoppers, plus the store's Matterport 3D tour.
 
-- `/` — the 3D walkthrough (simulated in-store POV) of the supplied scan `Muo5jpq44Xk`.
-- `/scene/:propertyId` — the walkthrough for a saved CoStar property.
+- `/` — the Matterport Showcase tour (in-store POV) of the supplied scan `Muo5jpq44Xk`.
+- `/scene/:propertyId` — the tour for a saved CoStar property.
 - `/shopper` and `/business` — the shopper and store-manager apps (see [Shopper and manager apps](#shopper-and-manager-apps)).
 
 ```sh
@@ -13,40 +13,22 @@ npm run dev   # http://localhost:3000
 
 After `npm install` changes dependencies, restart `next dev`; a server started before the install can keep serving 500s.
 
-## 3D walkthrough
+## 3D tour
 
-- Drag to look around (the scene follows the pointer). Scroll or pinch to zoom.
-- Select a spot on the floor to glide to the nearest scan position with a clear line of sight. The ring cursor shows where you are pointing and the destination marker lights up.
-- With the canvas focused, W/S or ↑/↓ walk, A/D strafe, ←/→ turn. Walking keeps eye height above the floor, slides along walls and shelving, and stays within 0.3 m of the scan positions and the paths between them. When input stops, the camera glides onto the nearest scan position so every still frame is an undistorted panorama.
+The scene is the standard Matterport Showcase embed (`https://my.matterport.com/show/?m=<model>&play=1&qs=1`), so navigation is Matterport's own: select a floor marker or use the arrow keys to jump between scan points, drag to look around, scroll or pinch to zoom. `play=1` starts without the play button and `qs=1` skips the fly-in. The toolbar's Reset view reloads the tour at its start point; Fullscreen fills the screen. The model must be public or unlisted in Matterport for the embed to load.
 
 ### Property data
 
 Use `.env.local` for the Supabase settings in `.env.example`. The existing `stores` table already has `costar_property_id`, `matterport_model_id`, `name`, and `address`.
 
 - `POST /api/db/properties`: insert a property/scan mapping using `Authorization: Bearer <PROPERTY_WRITE_TOKEN>`. Body: `{ "property_id": "236314", "matterport_model_id": "Muo5jpq44Xk", "name": "Sample Storefront", "address": "6301–6335 Ashcroft Dr, Houston, TX" }`. Retries return the existing row without updating it.
-- `/scene/236314`: read the newest saved scan for that property from Supabase and open its walkthrough.
+- `/scene/236314`: read the newest saved scan for that property from Supabase and open its tour.
 
 Run `npm run property:add-example` while the dev server is running to save the supplied property through the API. It reads the write token from the environment and does not print credentials.
 
-### Rendering data
-
-- `GET /api/scenes/:modelId` returns a render manifest: model ID, revision, units, coordinate conversion, mesh-proxy URL, skybox URL template, sweeps (position, floor height, rotation, neighbours) and the start sweep.
-- `GET /api/scenes/:modelId/mesh` streams the original OBJ. `GET /api/scenes/:modelId/sweeps/:sweepId/:resolution/:face` streams one skybox face (`high` = 1024 px, `2k` = 2048 px; faces 0–5). Only models registered in `stores` are served.
-- Matterport signs asset URLs for about five minutes, so metadata is cached in memory only until shortly before `validUntil`, and an expired link triggers one refresh. Credentials stay on the server.
-- Three.js parses the OBJ and converts Z-up to Y-up once (`(x, y, z) → (x, z, -y)`).
-
-### How the walkthrough is rendered (`components/scene/engine.ts`)
-
-The API's OBJ has no UVs and the textured MatterPak is not available to this account, so — like Showcase — the viewer projects each sweep's skybox onto the mesh from the sweep's camera centre:
-
-- Skybox convention (verified against the mesh by cross-sweep colour agreement): face 0 up, faces 1–4 horizon clockwise from above, face 5 down. In the pano-local frame face 1 looks along +x with image-right −y and up +z; the pano `rotation` quaternion maps pano-local to model (Z-up) coordinates. Faces are uploaded to GL cube slots `[+X, −X, +Y, −Y, +Z, −Z] = [2, 4, 0, 5, 1, 3]` and sampled with `g = (−Ly, Lz, Lx)`.
-- Up to four nearby sweeps are blended per fragment. Weights fall off with the 8th power of camera-to-sweep distance, so standing on a sweep shows its photo exactly and moving cross-fades near the midpoint.
-- A distance cubemap rendered from each sweep gates its projection, so photos never bleed through walls; surfaces no sweep can see fall back to the neutral `--scene-material` shading. Mesh holes show the nearest panorama by direction. Small disconnected mesh fragments are dropped on load.
-- Panoramas load at `high`; the sweep you settle on upgrades to `2k`. GPU caches are LRU-bounded.
-
 ### Design system
 
-Read [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md) before frontend changes to the walkthrough. Run `npm run check:ui` with the dev server running for desktop/mobile screenshots and canvas/interaction checks (uses installed Google Chrome). The shopper and manager apps keep their own v4 theme in `app/legacy.css`, loaded only by their route layouts, so the two styling systems never meet on one page.
+Read [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md) before frontend changes to the tour page. Run `npm run check:ui` with the dev server running for desktop/mobile screenshots and embed/toolbar checks (uses installed Google Chrome; set `PW_CHANNEL=chromium` to use Playwright's bundled browser). The shopper and manager apps keep their own v4 theme in `app/legacy.css`, loaded only by their route layouts, so the two styling systems never meet on one page.
 
 ## Shopper and manager apps
 
