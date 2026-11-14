@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AISLE_NAMES, DEMO_STORE } from "@/lib/seed/demo-store";
 import type { PublishedProduct } from "@/lib/types";
+import { installSpeechUnlock, speak, stopSpeaking } from "./speech";
 import { carryPosition, postTurn, prefsPatch, toNavPrefs, type GuideNav, type GuideReply, type GuideTurn } from "./guide";
 
 export type Contrast = "comfortable" | "dark" | "light";
@@ -146,10 +147,13 @@ export function ShopperProvider({ children }: { children: ReactNode }) {
       if (raw) setPrefsState({ ...DEFAULT_PREFS, ...(JSON.parse(raw) as Partial<Prefs>) });
     } catch {}
   }, []);
-  useEffect(() => () => {
-    try {
-      window.speechSynthesis?.cancel();
-    } catch {}
+  // iOS: unlock speech output on the first tap so replies that arrive later (after a network call) are spoken.
+  useEffect(() => {
+    const remove = installSpeechUnlock();
+    return () => {
+      remove();
+      stopSpeaking();
+    };
   }, []);
 
   const setPrefs = useCallback((p: Partial<Prefs>) => {
@@ -164,14 +168,9 @@ export function ShopperProvider({ children }: { children: ReactNode }) {
 
   const say = useCallback((text: string, rateOverride?: number) => {
     setLive(text);
-    const { speak, rate } = prefsRef.current;
-    if (!speak || typeof window === "undefined" || !window.speechSynthesis) return;
-    try {
-      speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(text);
-      u.rate = rateOverride ?? rate;
-      speechSynthesis.speak(u);
-    } catch {}
+    const p = prefsRef.current;
+    // Skipped while the mic is listening (see speech.ts), so the app never transcribes its own voice.
+    if (p.speak) speak(text, rateOverride ?? p.rate);
   }, []);
 
   const setMsg = useCallback((text: string, err = false) => {
