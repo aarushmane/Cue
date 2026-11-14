@@ -1,7 +1,20 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { carryPosition, helpDeskText, isGuiding, locationText, nodeLabel, MAX_SEND_HISTORY, nearestRate, needsPosition, postTurn, prefsPatch, toNavPrefs, trimForSend } from "@/components/shopper/guide";
+import type { GuideState } from "@/components/shopper/guide";
 
 describe("shopper agent client helpers", () => {
+  it.each<[GuideState | undefined, boolean, boolean]>([
+    [undefined, false, false], ["SEARCHING", false, false], ["DESTINATION_SELECTED", true, false],
+    ["LOCATING", true, false], ["ROUTING", false, true], ["GUIDING", false, true],
+    ["ARRIVED", false, false], ["NEEDS_HELP", false, false],
+  ])("position and guidance controls for %s", (state, position, guiding) => {
+    expect(needsPosition({ store_id: "s", state })).toBe(position);
+    expect(isGuiding(state)).toBe(guiding);
+    for (const confidence of ["CONFIRMED", "LIKELY", "UNKNOWN"] as const) {
+      expect(needsPosition({ store_id: "s", state, position_confidence: confidence }))
+        .toBe(state === "LOCATING" || (state === "DESTINATION_SELECTED" && confidence === "UNKNOWN"));
+    }
+  });
   it("maps settings to agent prefs", () => {
     expect(toNavPrefs({ detail: "detailed", rate: 1.3 })).toEqual({ verbosity: "detailed", speech_rate: 1.3 });
   });
@@ -34,6 +47,11 @@ describe("postTurn", () => {
   afterEach(() => vi.unstubAllGlobals());
   const stub = (status: number, body: unknown) =>
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(body), { status })));
+
+  it.each([null, {}, { nav: { store_id: "s" } }, { say: 12 }])("rejects malformed replies without throwing: %j", async (body) => {
+    stub(200, body);
+    expect(await postTurn({ store_id: "s" }, [], {})).toEqual({ ok: false, offline: false, say: expect.any(String) });
+  });
 
   it("reports offline on 503", async () => {
     stub(503, { error: "AGENT_UNAVAILABLE", say: "offline" });

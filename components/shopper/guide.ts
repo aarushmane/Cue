@@ -76,9 +76,15 @@ export async function postTurn(nav: GuideNav, history: unknown[], turn: GuideTur
   } catch {
     return { ok: false, offline: false, say: "I could not reach the assistant. Check your connection and try again." };
   }
-  const body = (await r.json().catch(() => ({}))) as Partial<GuideReply> & { say?: string };
-  if (r.status === 503) return { ok: false, offline: true, say: body.say ?? "The voice assistant is offline." };
-  if (!r.ok || !body.nav) return { ok: false, offline: false, say: body.say ?? "Sorry, something went wrong. Please try again." };
+  const raw: unknown = await r.json().catch(() => null);
+  const body = (raw && typeof raw === "object" ? raw : {}) as Partial<GuideReply>;
+  if (r.status === 503) return { ok: false, offline: true, say: typeof body.say === "string" ? body.say : "The voice assistant is offline." };
+  if (!r.ok || !body.nav || typeof body.nav.store_id !== "string" || typeof body.say !== "string" ||
+    typeof body.agent_text !== "string" || !Array.isArray(body.history) ||
+    !Array.isArray(body.route_text) || !body.route_text.every((t) => typeof t === "string") ||
+    !Array.isArray(body.choices) || !body.choices.every((t) => typeof t === "string")) {
+    return { ok: false, offline: false, say: typeof body.say === "string" ? body.say : "Sorry, something went wrong. Please try again." };
+  }
   return { ok: true, reply: body as GuideReply };
 }
 

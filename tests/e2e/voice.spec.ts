@@ -95,3 +95,15 @@ test("stopping listening yourself does not show an error", async ({ page }) => {
   await rec(page, "onend");
   await expect(page.locator("#mic-status")).toHaveText("Stopped listening.");
 });
+
+test("recognition end does not erase an error before React renders", async ({ page }) => {
+  await page.goto("/shopper");
+  await mic(page).click();
+  await page.evaluate(() => {
+    const r = (window as unknown as { __rec: { onerror: (e: { error: string }) => void; onend: () => void } }).__rec;
+    r.onerror({ error: "service-not-allowed" });
+    r.onend();
+  });
+  await expect(mic(page)).toHaveAttribute("aria-label", /Microphone permission denied/);
+  await expect(page.locator("#mic-status")).toContainText("Dictation");
+});

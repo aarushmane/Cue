@@ -162,7 +162,7 @@ export function PositionScan() {
   };
 
   const atEntrance = () => {
-    if (!ENTRANCE || s.guide.busy) return;
+    if (!ENTRANCE || phase === "camera" || phase === "sending" || s.guide.busy) return;
     void finish({
       confidence_state: "LIKELY",
       selected_node_id: ENTRANCE.id,
