@@ -44,7 +44,7 @@ describe("placePlan", () => {
 
 describe("runView", () => {
   it("is empty before the agent builds anything", () => {
-    expect(runView(newRun("r", layers))).toEqual({ property: null, graph: null, candidates: [], aerial: null });
+    expect(runView(newRun("r", layers))).toEqual({ property: null, graph: null, other_floors: [], candidates: [], aerial: null });
   });
 
   it("exposes graph geometry, landmarks and the matching floor's plan", () => {
@@ -78,6 +78,43 @@ describe("runView", () => {
     expect(v.debug?.plan?.matchedBy).toBe("floor-id");
     expect(v.debug?.walls[0].x1).toBeCloseTo(a.x);
     expect(v.debug?.walls[0].y1).toBeCloseTo(a.y);
+  });
+
+  it("draws the twin's other floors for the floor picker, without agent choices", () => {
+    const run = newRun("r", layers);
+    const sweeps = [
+      { id: "a", x: 0, y: 0, floorId: "f1", neighbors: ["b"] },
+      { id: "b", x: 5, y: 0, floorId: "f1", neighbors: ["a"] },
+      { id: "c", x: 0, y: 0, floorId: "f2", neighbors: ["d"] },
+      { id: "d", x: 0, y: 6, floorId: "f2", neighbors: ["c"] },
+    ];
+    run.twin = {
+      modelId: "m", floors: [{ id: "f1", label: "Ground" }, { id: "f2", label: "Upper" }, { id: "f3", label: "Roof" }], sweeps, panoramas: [], floorPlanImageUrl: null,
+      floorPlans: [{ url: "upper.jpg", width: 100, height: 100, resolution: 10, originX: 0, originY: 0, floorId: "f2" }],
+    };
+    run.graph = sweepsToGraph(sweeps, { floorId: "f1", entranceSweepId: "a" });
+    run.graphFloorId = "f1";
+    run.landmarkSweepIds = ["a", "d"];
+    const view = runView(run);
+    expect(view.graph?.by_agent).toBe(true);
+    expect(view.graph?.plan).toBeNull();
+    // f3 has no scan points, so only f2 is added.
+    expect(view.other_floors.map((f) => f.floor_label)).toEqual(["Upper"]);
+    const up = view.other_floors[0];
+    expect(up.by_agent).toBe(false);
+    expect(up.plan?.url).toBe("upper.jpg");
+    expect(up.nodes).toHaveLength(2);
+    expect(up.components).toBe(1);
+    expect(up.nodes.some((n) => n.kind === "entrance" || n.landmark)).toBe(false);
+  });
+
+  it("adds no other floors for a single-floor twin", () => {
+    const run = newRun("r", layers);
+    const sweeps = [{ id: "a", x: 0, y: 0, floorId: "f1", neighbors: [] }, { id: "b", x: 3, y: 0, floorId: "f1", neighbors: [] }];
+    run.twin = { modelId: "m", floors: [{ id: "f1", label: "Ground" }], sweeps, panoramas: [], floorPlanImageUrl: null, floorPlans: [] };
+    run.graph = sweepsToGraph(sweeps, { floorId: "f1" });
+    run.graphFloorId = "f1";
+    expect(runView(run).other_floors).toEqual([]);
   });
 });
 

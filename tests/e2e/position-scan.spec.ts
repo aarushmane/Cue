@@ -1,7 +1,13 @@
 import { expect, test } from "@playwright/test";
 
 // Fake camera: Chromium's synthetic device, permission auto-granted.
-test.use({ launchOptions: { args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"] } });
+// Keep PW_CHROMIUM_PATH (playwright.config.ts): launchOptions here replaces the config's, it doesn't merge.
+test.use({
+  launchOptions: {
+    args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"],
+    ...(process.env.PW_CHROMIUM_PATH ? { executablePath: process.env.PW_CHROMIUM_PATH } : {}),
+  },
+});
 
 const base = { store_id: "demo-store", prefs: { verbosity: "concise", speech_rate: 1 }, candidate_product_ids: [], step_index: 0 };
 const chosen = {

@@ -2,6 +2,7 @@
 // floor plan image placed in the same frame when the twin has one. Pure, so it is unit tested.
 import type { FloorPlanImage } from "../../costar";
 import type { NodeKind } from "../../types";
+import { sweepsToGraph, type DraftGraph } from "../../twin/sweepsToGraph";
 import type { OnboardingRun } from "./run-context";
 
 export interface GraphView {
@@ -10,6 +11,10 @@ export interface GraphView {
   width_m: number;
   height_m: number;
   edge_source: "neighbors" | "proximity";
+  /** Connected parts of the walkable graph (1 = fully connected). */
+  components: number;
+  /** True for the floor the agent built (entrance and landmarks chosen); false for floors drawn for the floor picker. */
+  by_agent: boolean;
   nodes: { id: string; x: number; y: number; kind: NodeKind; label: string; landmark: boolean }[];
   edges: [string, string][];
   /** Floor plan placement in the graph's normalized frame (may extend past 0..1). Best effort: verify visually. */
@@ -30,6 +35,11 @@ export type PlanMatch = "floor-id" | "all-floors" | "single-floor";
 export interface RunView {
   property: { id: string; name: string; address: string; property_type: string | null; matterport_model_id: string | null } | null;
   graph: GraphView | null;
+  /**
+   * The twin's other floors with scan points, drawn here with the same sweepsToGraph settings so staff can look at
+   * every floor (floor picker). The agent didn't plan these: no entrance or landmarks are chosen on them.
+   */
+  other_floors: GraphView[];
   candidates: { name: string; brand: string | null; confidence: string; image_url: string }[];
   /** What inspect_aerial read from the overhead photo (entrance side, parking, approach). Advisory: staff confirm. */
   aerial: { notes: string } | null;
@@ -89,44 +99,59 @@ export function planForFloor(plans: FloorPlanImage[], floorCount: number, floorI
   return null;
 }
 
+function floorView(run: OnboardingRun, g: DraftGraph, floorId: string | null, byAgent: boolean): GraphView {
+  const floors = run.twin?.floors ?? [];
+  const idx = floorId ? floors.findIndex((f) => f.id === floorId) : -1;
+  const plans = run.twin?.floorPlans ?? [];
+  const match = planForFloor(plans, floors.length, floorId);
+  const planImg = match?.plan ?? null;
+  const landmarks = new Set(byAgent ? run.landmarkSweepIds : []);
+  const view: GraphView = {
+    floor_id: floorId,
+    floor_label: idx >= 0 ? floors[idx].label : null,
+    width_m: g.widthM,
+    height_m: g.heightM,
+    edge_source: g.edgeSource,
+    components: g.components.length,
+    by_agent: byAgent,
+    nodes: g.nodes.map((n) => ({ id: n.id, x: n.x, y: n.y, kind: n.kind, label: n.label, landmark: !!n.sweepId && landmarks.has(n.sweepId) })),
+    edges: g.edges.map((e) => [e.from, e.to] as [string, string]),
+    plan: planImg ? placePlan(planImg, g) : null,
+  };
+  if (process.env.NODE_ENV !== "production") {
+    const nx = (x: number) => (x - g.originX) / g.widthM;
+    const ny = (y: number) => (y - g.originY) / g.heightM;
+    const walls = (floorId && run.twin?.walls?.[floorId]) || [];
+    view.debug = {
+      graph: { originX: g.originX, originY: g.originY, widthM: g.widthM, heightM: g.heightM },
+      plan: match && planImg?.resolution
+        ? { ...planImg, widthM: planImg.width / planImg.resolution, heightM: planImg.height / planImg.resolution, planFloorId: planImg.floorId ?? null, matchedBy: match.matchedBy }
+        : null,
+      plansAvailable: plans.map((p) => ({ floorId: p.floorId ?? null, url: p.url })),
+      walls: walls.map((w) => ({ x1: nx(w.ax), y1: ny(w.ay), x2: nx(w.bx), y2: ny(w.by) })),
+    };
+  }
+  return view;
+}
+
+/** Graphs for the twin's floors the agent didn't build, in the twin's floor order; floors without scan points are skipped. */
+function otherFloors(run: OnboardingRun): GraphView[] {
+  const twin = run.twin;
+  if (!twin || !run.graph || twin.floors.length < 2) return [];
+  return twin.floors
+    .filter((f) => f.id !== run.graphFloorId && twin.sweeps.some((s) => s.floorId === f.id))
+    .map((f) => floorView(run, sweepsToGraph(twin.sweeps, { floorId: f.id, walls: twin.walls?.[f.id] ?? [] }), f.id, false))
+    .filter((v) => v.nodes.length > 0);
+}
+
 export function runView(run: OnboardingRun): RunView {
   const p = run.property;
   const g = run.graph;
-  let graph: GraphView | null = null;
-  if (g && g.nodes.length) {
-    const floors = run.twin?.floors ?? [];
-    const idx = run.graphFloorId ? floors.findIndex((f) => f.id === run.graphFloorId) : -1;
-    const plans = run.twin?.floorPlans ?? [];
-    const match = planForFloor(plans, floors.length, run.graphFloorId);
-    const planImg = match?.plan ?? null;
-    const landmarks = new Set(run.landmarkSweepIds);
-    graph = {
-      floor_id: run.graphFloorId ?? null,
-      floor_label: idx >= 0 ? floors[idx].label : null,
-      width_m: g.widthM,
-      height_m: g.heightM,
-      edge_source: g.edgeSource,
-      nodes: g.nodes.map((n) => ({ id: n.id, x: n.x, y: n.y, kind: n.kind, label: n.label, landmark: !!n.sweepId && landmarks.has(n.sweepId) })),
-      edges: g.edges.map((e) => [e.from, e.to] as [string, string]),
-      plan: planImg ? placePlan(planImg, g) : null,
-    };
-    if (process.env.NODE_ENV !== "production") {
-      const nx = (x: number) => (x - g.originX) / g.widthM;
-      const ny = (y: number) => (y - g.originY) / g.heightM;
-      const walls = (run.graphFloorId && run.twin?.walls?.[run.graphFloorId]) || [];
-      graph.debug = {
-        graph: { originX: g.originX, originY: g.originY, widthM: g.widthM, heightM: g.heightM },
-        plan: match && planImg?.resolution
-          ? { ...planImg, widthM: planImg.width / planImg.resolution, heightM: planImg.height / planImg.resolution, planFloorId: planImg.floorId ?? null, matchedBy: match.matchedBy }
-          : null,
-        plansAvailable: plans.map((p) => ({ floorId: p.floorId ?? null, url: p.url })),
-        walls: walls.map((w) => ({ x1: nx(w.ax), y1: ny(w.ay), x2: nx(w.bx), y2: ny(w.by) })),
-      };
-    }
-  }
+  const graph = g && g.nodes.length ? floorView(run, g, run.graphFloorId ?? null, true) : null;
   return {
     property: p ? { id: p.id, name: p.name, address: p.address, property_type: p.propertyType, matterport_model_id: p.matterportModelId } : null,
     graph,
+    other_floors: graph ? otherFloors(run) : [],
     candidates: run.candidates.slice(0, 50).map((c) => ({ name: c.name, brand: c.brand ?? null, confidence: c.confidence, image_url: c.image_url })),
     aerial: run.aerialNotes?.trim() ? { notes: stripDataUrls(run.aerialNotes.trim()) } : null,
   };

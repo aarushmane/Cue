@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, Circle, CircleDot } from "lucide-react";
 import type { OnboardingResult } from "@/lib/agents/onboarding/agent";
+import type { GraphView } from "@/lib/agents/onboarding/view";
 import { asTodos, streamOnboarding, todoAnnouncement, toolLabel, type Todo } from "@/lib/agents/onboarding/progress";
 import { runOnboardingDemo } from "@/lib/demo/onboard";
 import { draftToFloorPlan } from "@/lib/map/draftToFloorPlan";
@@ -41,14 +42,12 @@ function PlanList({ todos }: { todos: Todo[] }) {
   );
 }
 
-/** Load the imported graph into the floor plan editor as the store's map draft (issue #4, 2F). */
-function EditDraft({ result }: { result: OnboardingResult }) {
+/** Load the imported graph (the floor shown) into the floor plan editor as the store's map draft (issue #4, 2F). */
+function EditDraft({ result, graph: g }: { result: OnboardingResult; graph: GraphView }) {
   const router = useRouter();
   const s = useStaff();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const g = result.view.graph;
-  if (!g) return null;
   if (!s.snap) return <p className="m-0 text-sm text-muted">Loading store data…</p>;
   if (s.snap.storeId !== result.store_id) {
     return (
@@ -108,6 +107,8 @@ export function OnboardScreen() {
   const [busy, setBusy] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [showPlan, setShowPlan] = useState(true);
+  // Floor picker: null = the floor the agent built.
+  const [floorSel, setFloorSel] = useState<string | null>(null);
   // Live progress while the run streams.
   const [liveTodos, setLiveTodos] = useState<Todo[]>([]);
   const [now, setNow] = useState("");
@@ -151,6 +152,7 @@ export function OnboardScreen() {
     setBusy(true);
     setError("");
     setResult(null);
+    setFloorSel(null);
     setElapsed(0);
     setLiveTodos([]);
     setNow("");
@@ -200,7 +202,10 @@ export function OnboardScreen() {
 
   const todos = result ? asTodos(result.todos) : liveTodos;
   const v = result?.view;
-  const g = v?.graph ?? null;
+  const agentGraph = v?.graph ?? null;
+  const floors: GraphView[] = agentGraph ? [agentGraph, ...(v?.other_floors ?? [])] : [];
+  const g = (floorSel !== null && floors.find((f) => f.floor_id === floorSel)) || agentGraph;
+  const floorName = (f: GraphView, i: number) => f.floor_label || `Floor ${i + 1}`;
 
   return (
     <>
@@ -288,7 +293,7 @@ export function OnboardScreen() {
                 <li className="rounded-full bg-tint px-3 py-1">
                   {result.graph_summary.components === 1 ? "Fully connected" : `${result.graph_summary.components} disconnected parts`}
                 </li>
-                {g && <li className="rounded-full bg-tint px-3 py-1">Edges: {g.edge_source === "neighbors" ? "Matterport navigation links" : "proximity (wall-checked)"}</li>}
+                {agentGraph && <li className="rounded-full bg-tint px-3 py-1">Edges: {agentGraph.edge_source === "neighbors" ? "Matterport navigation links" : "proximity (wall-checked)"}</li>}
               </ul>
             )}
           </Card>
@@ -319,7 +324,7 @@ export function OnboardScreen() {
           {g && (
             <section aria-labelledby="ob-map-h" className="flex flex-col gap-2.5">
               <div className="flex items-center justify-between gap-2">
-                <H2 id="ob-map-h">Draft walkable graph{g.floor_label ? ` · ${g.floor_label}` : ""}</H2>
+                <H2 id="ob-map-h">{g.by_agent ? "Draft walkable graph" : "Walkable graph"}{g.floor_label ? ` · ${g.floor_label}` : ""}</H2>
                 {g.plan && (
                   <label className="flex items-center gap-2 text-sm font-semibold">
                     <input type="checkbox" checked={showPlan} onChange={(e) => setShowPlan(e.target.checked)} className="size-5" />
@@ -327,12 +332,35 @@ export function OnboardScreen() {
                   </label>
                 )}
               </div>
+              {floors.length > 1 && (
+                <div role="group" aria-label="Floor" className="flex flex-wrap gap-2">
+                  {floors.map((f, i) => (
+                    <button
+                      key={f.floor_id ?? i}
+                      type="button"
+                      aria-pressed={f === g}
+                      onClick={() => setFloorSel(f.by_agent ? null : f.floor_id)}
+                      className={`min-h-11 rounded-full border-2 px-3.5 text-sm font-bold ${f === g ? "border-indigo bg-indigo text-white" : "border-control bg-ivory text-charcoal"}`}
+                    >
+                      {floorName(f, i)}
+                      {f.by_agent ? " (agent's draft)" : ""}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {!g.by_agent && (
+                <p className="m-0 rounded-[18px] bg-ivory px-3.5 py-2.5 text-[15px]">
+                  Drawn from this floor&apos;s scan points for reference: {g.nodes.length} points, {g.edges.length} paths,{" "}
+                  {g.components === 1 ? "fully connected" : `${g.components} disconnected parts`}. The agent built its draft on{" "}
+                  {agentGraph ? floorName(agentGraph, 0) : "another floor"}, so no entrance or landmarks are chosen here.
+                </p>
+              )}
               <DraftGraphMap graph={g} showPlan={showPlan} />
               <p className="m-0 text-sm text-muted">
                 {Math.round(g.width_m)} × {Math.round(g.height_m)} m. Gold dots are the entrance, outlined dots are landmark scan points used to find
                 shoppers. {g.plan ? "The plan is aligned from Matterport's origin and scale; check it visually." : "No floor plan image came with this model."}
               </p>
-              <EditDraft result={result} />
+              <EditDraft key={g.floor_id ?? "agent"} result={result} graph={g} />
             </section>
           )}
 

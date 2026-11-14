@@ -10,7 +10,7 @@ const result = {
   view: {
     property: { id: "fixture-property-1", name: "Fixture Market", address: "1 Test St", property_type: null, matterport_model_id: null },
     graph: {
-      floor_id: "f0", floor_label: "Ground floor", width_m: 30, height_m: 20, edge_source: "neighbors",
+      floor_id: "f0", floor_label: "Ground floor", width_m: 30, height_m: 20, edge_source: "neighbors", components: 1, by_agent: true,
       nodes: [
         { id: "sweep-a", x: 0.1, y: 0.9, kind: "entrance", label: "Entrance", landmark: true },
         { id: "sweep-b", x: 0.5, y: 0.5, kind: "junction", label: "", landmark: false },
@@ -18,6 +18,14 @@ const result = {
       ],
       edges: [["sweep-a", "sweep-b"], ["sweep-b", "sweep-c"]], plan: null,
     },
+    other_floors: [{
+      floor_id: "f1", floor_label: "Mezzanine", width_m: 10, height_m: 8, edge_source: "neighbors", components: 1, by_agent: false,
+      nodes: [
+        { id: "sweep-m", x: 0.2, y: 0.2, kind: "junction", label: "", landmark: false },
+        { id: "sweep-n", x: 0.8, y: 0.8, kind: "junction", label: "", landmark: false },
+      ],
+      edges: [["sweep-m", "sweep-n"]], plan: null,
+    }],
     candidates: [{ name: "Oat Milk", brand: "Califia", confidence: "high", image_url: "" }], aerial: null,
   },
 };
@@ -57,6 +65,15 @@ test("confirm, run, then open the imported draft in the floor plan editor", asyn
   expect(body).toMatchObject({ costar_property_id: "fixture-property-1", store_id: "demo-store" });
   await expect(page.getByText("1 suggestion is waiting in demo-store's Review queue")).toBeVisible();
   await expect(page.getByText("No shelves were imported.")).toBeVisible();
+
+  // Floor picker: the twin's other floor is drawn for reference, then back to the agent's draft.
+  const floors = page.getByRole("group", { name: "Floor" });
+  await floors.getByRole("button", { name: "Mezzanine" }).click();
+  await expect(page.getByRole("heading", { name: "Walkable graph · Mezzanine" })).toBeVisible();
+  await expect(page.getByRole("img", { name: /2 scan points and 1 walkable paths/ })).toBeVisible();
+  await expect(page.getByText("no entrance or landmarks are chosen here")).toBeVisible();
+  await floors.getByRole("button", { name: "Ground floor (agent's draft)" }).click();
+  await expect(page.getByRole("heading", { name: "Draft walkable graph · Ground floor" })).toBeVisible();
 
   await page.getByRole("button", { name: "Edit this draft in the floor plan editor" }).click();
   await expect(page).toHaveURL(/\/business\/floor-plan$/);

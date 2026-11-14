@@ -8,7 +8,7 @@ const base = { mapId: "map-demo", version: 3 };
 
 function view(over: Partial<GraphView> = {}): GraphView {
   return {
-    floor_id: "f0", floor_label: "Ground floor", width_m: 40, height_m: 20, edge_source: "neighbors",
+    floor_id: "f0", floor_label: "Ground floor", width_m: 40, height_m: 20, edge_source: "neighbors", components: 1, by_agent: true,
     nodes: [
       { id: "sweep-aaaaaaaaaaaaaaaaaaaaaaaaaaaa", x: 0, y: 0.5, kind: "entrance", label: "Entrance", landmark: false },
       { id: "sweep-b", x: 0.5, y: 0.5, kind: "junction", label: "Bakery counter", landmark: true },
