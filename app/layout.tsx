@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className="dark">
-      <body><TooltipProvider delayDuration={250}>{children}</TooltipProvider></body>
+      <body><TooltipProvider delayDuration={250} disableHoverableContent>{children}</TooltipProvider></body>
     </html>
   );
 }
