@@ -97,6 +97,7 @@ export function onboardingTools(run: OnboardingRun) {
         walls: run.twin.walls?.[floor_id] ?? [],
       });
       run.graph = g;
+      run.graphFloorId = floor_id;
       logEvent(run, "build_draft_graph", { nodes: g.nodes.length, edges: g.edges.length, components: g.components.length });
       return json({
         nodes: g.nodes.length,

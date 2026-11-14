@@ -10,6 +10,8 @@ export interface OnboardingRun {
   property?: CostarProperty;
   twin?: TwinModel;
   graph?: DraftGraph;
+  /** Floor the draft graph was built on (for drawing it over that floor's plan). */
+  graphFloorId?: string;
   aerialNotes?: string;
   landmarkSweepIds: string[];
   candidates: (ShelfCandidate & { image_url: string; review_status: "NEEDS_REVIEW" })[];

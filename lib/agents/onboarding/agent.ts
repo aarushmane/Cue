@@ -11,6 +11,7 @@ import { toGeminiParameters } from "../../ai/geminiSchema";
 import { aiProvider } from "../../ai/provider";
 import { getDataLayers } from "../../costar";
 import { finishAgentRun, startAgentRun } from "../../db/writes";
+import { extractPlan, runView, type RunView } from "./view";
 import { newRun, type OnboardingRun } from "./run-context";
 import { onboardingTools } from "./tools";
 
@@ -54,6 +55,8 @@ export interface OnboardingResult {
   graph_summary: { nodes: number; edges: number; components: number; warnings: string[] } | null;
   candidates_queued: number;
   log: OnboardingRun["log"];
+  /** Display model for the staff onboarding screen (property, draft graph geometry, candidates). */
+  view: RunView;
 }
 
 export async function runOnboarding(propertyId: string, startedBy: string | null): Promise<OnboardingResult> {
@@ -88,9 +91,7 @@ export async function runOnboarding(propertyId: string, startedBy: string | null
     );
     const last = result.messages.at(-1);
     const report = typeof last?.content === "string" ? last.content : JSON.stringify(last?.content ?? "");
-    const todos = (result as { todos?: unknown }).todos ?? [];
-    // Every tool the agent called, in order (includes deepagents built-ins such as write_todos and task).
-    const toolCalls = (result.messages as { tool_calls?: { name: string }[] }[]).flatMap((m) => m.tool_calls?.map((c) => c.name) ?? []);
+    const { toolCalls, todos } = extractPlan(result);
     await finishAgentRun(runId, "SUCCEEDED", todos, run.log);
     return {
       run_id: runId,
@@ -102,6 +103,7 @@ export async function runOnboarding(propertyId: string, startedBy: string | null
       graph_summary: run.graph ? { nodes: run.graph.nodes.length, edges: run.graph.edges.length, components: run.graph.components.length, warnings: run.graph.warnings } : null,
       candidates_queued: run.candidates.length,
       log: run.log,
+      view: runView(run),
     };
   } catch (err) {
     await finishAgentRun(runId, "FAILED", [], [...run.log, { at: new Date().toISOString(), event: "error", detail: String(err) }]);

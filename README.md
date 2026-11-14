@@ -13,7 +13,7 @@ npm run test:e2e             # Playwright: v4 handoff scenarios + accessibility 
 PW_CHANNEL=chrome npm run test:e2e   # same, using an installed Google Chrome
 ```
 
-Open `/shopper` (voice-first shopper app) or `/business` (store manager: Home, Floor Plan, Review, More).
+Open `/shopper` (voice-first shopper app) or `/business` (store manager: Home, Floor Plan, Review, More). Onboard a store from a CoStar id at `/business/onboard` (More → Onboard a store); a run takes 1–3 minutes.
 
 Try the API:
 
