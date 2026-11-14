@@ -143,7 +143,7 @@ Rule: on a turn that reads a route step, `say` is ONLY the verbatim `planRoute` 
 Returns 503 `AGENT_UNAVAILABLE` without an API key. The UI must still work then: typed search, `/api/routes`, and buttons.
 
 ### ✅ Onboarding agent: `POST /api/agent/onboard` (LangChain deepagents, staff only)
-Request: `{ costar_property_id }` with a staff `Authorization: Bearer` token → `{ run_id, source: "costar"|"fixture", draft_id, report, todos, graph_summary, candidates_queued, log }` (not streamed yet).
+Request: `{ costar_property_id }` with a staff `Authorization: Bearer` token → `{ run_id, source: "costar"|"fixture", draft_id, report, todos, tool_calls, graph_summary, candidates_queued, log, view }` (not streamed yet). `view` (`lib/agents/onboarding/view.ts`) is the display model for the staff screen at `/business/onboard`: property identity, the draft graph's normalized nodes/edges with landmark flags, the floor plan placement, and up to 50 candidates. The screen calls the agent through the `runOnboardingDemo` Server Function (`lib/demo/onboard.ts`, memory mode only), so no staff token reaches the browser.
 Until the real CoStar adapter exists, use `fixture-property-1`. Results are labelled `source: "fixture"`.
 Plan it follows: look up the property (CoStar) → fetch the Matterport model (sweeps, floor plan, panoramas) → convert sweeps to a draft graph (`lib/twin`) → pick landmark panoramas → run the shelf-recognition subagent on panorama crops → write a draft map and NEEDS_REVIEW observations → hand off to staff review.
 Output is always a DRAFT map plus NEEDS_REVIEW observations. Staff publish.

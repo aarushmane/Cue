@@ -23,6 +23,8 @@ export interface FloorPlanImage {
   resolution: number; // pixels per meter
   originX: number;
   originY: number;
+  /** Matterport's Floorplan.floor. null/absent = the plan covers every floor of the model. */
+  floorId?: string | null;
 }
 
 export interface TwinModel {

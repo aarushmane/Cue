@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { resetDemo } from "./helpers";
 
 const PAGES = [
-  "/business", "/business/floor-plan", "/business/review", "/business/more", "/business/inventory", "/business/activity",
+  "/business", "/business/floor-plan", "/business/review", "/business/more", "/business/inventory", "/business/activity", "/business/onboard",
   "/signs", "/shopper", "/shopper/guide", "/shopper/settings", "/shopper/consent", "/shopper/contribute", "/shopper/help",
 ];
 

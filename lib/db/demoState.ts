@@ -242,6 +242,65 @@ export function submitShopperObservation(s: ShopperSubmission): Ok<{ observation
   return { ok: true, observation: clone(observation), merged: !!ex, message };
 }
 
+// ───────────────────────────── AI (onboarding) observations ─────────────────────────────
+
+/** What the onboarding agent's shelf recognizer produces (ShelfCandidate plus the image it came from). */
+export interface AiCandidate {
+  name: string;
+  brand: string | null;
+  variant: string | null;
+  size: string | null;
+  evidence: string;
+  confidence: "high" | "medium" | "low";
+  image_url?: string;
+}
+
+const CONFIDENCE = { high: "High", medium: "Medium", low: "Low" } as const;
+
+/** Next OBS-### id (same numbering as shopper submissions; seeds start at 101). */
+const nextObsId = (obs: Observation[]) => `OBS-${Math.max(100, ...obs.map((o) => Number(o.id.replace("OBS-", "")) || 0)) + 1}`;
+
+/** Candidate fields for review. Aisle, shelf, level and category stay empty: staff choose them, and validate() blocks publish until they do. */
+export function aiObservationCandidate(c: AiCandidate): ObservationCandidate {
+  return { name: c.name.trim(), brand: c.brand?.trim() ?? "", category: "", size: c.size?.trim() ?? "", variant: c.variant?.trim() ?? "", aisle: "", shelf: "", level: "" };
+}
+
+/** Evidence line shown to the reviewer: run-level context, the source image, and what the model read on the package. */
+export const aiEvidence = (evidence: string, c: AiCandidate) =>
+  [evidence.trim(), c.image_url && `Image: ${c.image_url}.`, c.evidence.trim() && `Seen: ${c.evidence.trim()}`].filter(Boolean).join(" ");
+
+/**
+ * Queue the onboarding agent's product suggestions for staff review. Always NEEDS_REVIEW, source "ai", no shelf:
+ * nothing here publishes, and reviewObservation() runs the full validate() checklist before any of them can.
+ */
+export function addAiObservations(
+  storeId: string, candidates: AiCandidate[], evidence: string,
+): Ok<{ observations: Observation[]; event: AuditEvent | null }> | Fail {
+  const state = db();
+  if (storeId !== DEMO_STORE.id) return { ok: false, status: 404, code: "NOT_FOUND", error: "Unknown store." };
+  const valid = candidates.filter((c) => c.name?.trim());
+  if (!valid.length) return { ok: true, observations: [], event: null };
+  const at = new Date().toISOString();
+  const added: Observation[] = [];
+  for (const c of valid) {
+    added.push({
+      id: nextObsId([...state.observations, ...added]), source: "ai", storeId, at, confidence: CONFIDENCE[c.confidence] ?? "Low",
+      evidence: aiEvidence(evidence, c), candidate: aiObservationCandidate(c), status: "NEEDS_REVIEW", version: 1,
+    });
+  }
+  const n = added.length;
+  const event: AuditEvent = {
+    id: nextEventId(), actor_label: "Onboarding agent (AI)", action: "ai", entity: "observation", entity_id: added[0].id, created_at: at,
+    summary: `Onboarding agent queued ${n} suggestion${n === 1 ? "" : "s"}`,
+    old_json: { display: "—" },
+    new_json: { display: `${n} × NEEDS_REVIEW · not published (${added[0].id}${n > 1 ? `–${added[n - 1].id}` : ""})`, status: "NEEDS_REVIEW", observation_ids: added.map((o) => o.id) },
+    evidence: evidence.trim() || "Onboarding agent shelf recognition", original_observation: null,
+  };
+  state.observations = [...state.observations, ...added];
+  state.audit = [event, ...state.audit];
+  return { ok: true, observations: clone(added), event: clone(event) };
+}
+
 // ───────────────────────────── Product move ─────────────────────────────
 
 /** Equivalent of move_product(): supersede the location, bump version, write audit, in one commit. */

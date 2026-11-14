@@ -17,7 +17,7 @@ const NAV = [
   {
     href: "/business/more", label: "More", Icon: Menu,
     // Inventory, Activity and Shopper sightings live under More and highlight More.
-    match: (p: string) => ["/business/more", "/business/inventory", "/business/activity", "/business/sightings"].some((x) => p.startsWith(x)),
+    match: (p: string) => ["/business/more", "/business/inventory", "/business/activity", "/business/sightings", "/business/onboard"].some((x) => p.startsWith(x)),
   },
 ];
 
