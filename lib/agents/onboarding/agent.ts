@@ -3,6 +3,7 @@
 // → landmark references → shelf suggestions (subagent) → saved draft for staff review.
 import { ChatAnthropic } from "@langchain/anthropic";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
+import { awaitAllCallbacks } from "@langchain/core/callbacks/promises";
 import { convertToOpenAITool } from "@langchain/core/utils/function_calling";
 import { createDeepAgent } from "deepagents";
 import { todoListMiddleware } from "langchain";
@@ -45,6 +46,25 @@ class GeminiChat extends ChatGoogleGenerativeAI {
     });
     return super.bindTools(cleaned, kwargs);
   }
+}
+
+// Same env vars @langchain/core checks before attaching the LangSmith tracer.
+const tracingOn = () =>
+  ["LANGSMITH_TRACING_V2", "LANGCHAIN_TRACING_V2", "LANGSMITH_TRACING", "LANGCHAIN_TRACING"].some((k) => process.env[k] === "true");
+
+/**
+ * Serverless functions can freeze as soon as the response is sent, losing trace batches still in flight. Drain
+ * LangChain's callback queue and the LangSmith client's pending batches before returning, capped so a slow
+ * LangSmith never holds up the staff response for long. No-op (and no LangSmith client created) when tracing is off.
+ */
+async function flushTraces(timeoutMs = 10_000) {
+  if (!tracingOn()) return;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([
+    awaitAllCallbacks().catch(() => undefined),
+    new Promise<void>((resolve) => { timer = setTimeout(resolve, timeoutMs); }),
+  ]);
+  clearTimeout(timer);
 }
 
 export interface OnboardingResult {
@@ -98,7 +118,8 @@ function buildAgent(run: OnboardingRun) {
 type Agent = ReturnType<typeof buildAgent>;
 type AgentInput = Parameters<Agent["invoke"]>[0];
 /** Runs the agent to completion and returns its final state (messages + todos). The only part invoke and stream differ in. */
-type Execute = (agent: Agent, input: AgentInput) => Promise<{ messages?: unknown[]; todos?: unknown }>;
+type TraceConfig = { runName: string; tags: string[]; metadata: { run_id: string; property_id: string } };
+type Execute = (agent: Agent, input: AgentInput, trace: TraceConfig) => Promise<{ messages?: unknown[]; todos?: unknown }>;
 
 const RECURSION_LIMIT = 60;
 
@@ -111,7 +132,11 @@ async function executeOnboarding(propertyId: string, startedBy: string | null, o
   const agent = buildAgent(run);
 
   try {
-    const state = await execute(agent, { messages: [{ role: "user", content: `Onboard CoStar property ${propertyId}.` }] });
+    const state = await execute(agent, { messages: [{ role: "user", content: `Onboard CoStar property ${propertyId}.` }] }, {
+      runName: `onboard ${propertyId}`,
+      tags: ["storeguide", "onboarding", layers.source],
+      metadata: { run_id: runId, property_id: propertyId },
+    });
     const last = state.messages?.at(-1) as { content?: unknown } | undefined;
     const report = typeof last?.content === "string" ? last.content : JSON.stringify(last?.content ?? "");
     const { toolCalls, todos } = extractPlan(state);
@@ -133,12 +158,14 @@ async function executeOnboarding(propertyId: string, startedBy: string | null, o
   } catch (err) {
     await finishAgentRun(runId, "FAILED", [], [...run.log, { at: new Date().toISOString(), event: "error", detail: String(err) }]);
     throw err;
+  } finally {
+    await flushTraces(); // failed runs are the ones judges most need to see, so flush on both paths
   }
 }
 
 /** Run to completion and return the result (the Server Function fallback and POST /api/agent/onboard). */
 export function runOnboarding(propertyId: string, startedBy: string | null, opts: OnboardingOptions = {}): Promise<OnboardingResult> {
-  return executeOnboarding(propertyId, startedBy, opts, (agent, input) => agent.invoke(input, { recursionLimit: RECURSION_LIMIT }));
+  return executeOnboarding(propertyId, startedBy, opts, (agent, input, trace) => agent.invoke(input, { ...trace, recursionLimit: RECURSION_LIMIT }));
 }
 
 /**
@@ -148,9 +175,9 @@ export function runOnboarding(propertyId: string, startedBy: string | null, opts
 export function runOnboardingStream(
   propertyId: string, startedBy: string | null, opts: OnboardingOptions, io: { onEvent: (e: OnboardEvent) => void; signal?: AbortSignal },
 ): Promise<OnboardingResult> {
-  return executeOnboarding(propertyId, startedBy, opts, async (agent, input) => {
+  return executeOnboarding(propertyId, startedBy, opts, async (agent, input, trace) => {
     const acc = createUpdatesAccumulator();
-    const stream = await agent.stream(input, { recursionLimit: RECURSION_LIMIT, streamMode: "updates", signal: io.signal });
+    const stream = await agent.stream(input, { ...trace, recursionLimit: RECURSION_LIMIT, streamMode: "updates", signal: io.signal });
     for await (const chunk of stream) for (const e of acc.push(chunk)) io.onEvent(e);
     return acc.state();
   });
