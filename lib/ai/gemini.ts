@@ -13,7 +13,8 @@ export function geminiConfigured(): boolean {
 }
 
 export function getGemini(): GoogleGenAI {
-  if (!client) client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  // Retry transient overloads ("high demand" 503s are common on the free tier); short delays keep voice turns snappy.
+  if (!client) client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY, httpOptions: { retryOptions: { attempts: 3, initialDelay: 1, maxDelay: 4 } } });
   return client;
 }
 

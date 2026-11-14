@@ -14,6 +14,24 @@ const LandmarkMatch = z.object({
 });
 export type LandmarkMatch = z.infer<typeof LandmarkMatch>;
 
+// Products visible in the same frames feed the adaptive inventory (lib/inventory). Same call, no extra request.
+const ProductSeen = z.object({
+  name: z.string(),
+  brand: z.string().nullable(),
+  variant: z.string().nullable(),
+  size: z.string().nullable(),
+  category: z.string().nullable(), // product type, e.g. "plant-based milk"
+  evidence: z.string(), // legible text / packaging supporting it
+  confidence: z.enum(["high", "medium", "low"]),
+});
+// No .max() on the array: Gemini rejects maxItems on arrays of objects this size (400 INVALID_ARGUMENT).
+// The cap is applied in code instead.
+const ScanReading = LandmarkMatch.extend({ products_seen: z.array(ProductSeen) });
+const MAX_PRODUCTS_PER_SCAN = 40;
+export type ProductSeen = z.infer<typeof ProductSeen>;
+
+export type ScanResult = LocalizeResult & { products_seen: ProductSeen[] };
+
 /** Neighbors-of-previous-node ordering, so likely landmarks are listed first and adjacency can upgrade confidence. */
 function adjacentNodeIds(graph: StoreGraph, nodeId: string | null | undefined): Set<string> {
   const out = new Set<string>();
@@ -63,10 +81,10 @@ export async function matchLandmark(args: {
   landmarks: Landmark[];
   graph: StoreGraph;
   previousNodeId?: string | null;
-}): Promise<LocalizeResult> {
+}): Promise<ScanResult> {
   const { frames, landmarks, graph, previousNodeId } = args;
   if (landmarks.length === 0) {
-    return { confidence_state: "UNKNOWN", selected_node_id: null, candidate_node_ids: [], landmark_id: null, evidence: "This store has no reference landmarks yet." };
+    return { confidence_state: "UNKNOWN", selected_node_id: null, candidate_node_ids: [], landmark_id: null, evidence: "This store has no reference landmarks yet.", products_seen: [] };
   }
   const near = adjacentNodeIds(graph, previousNodeId);
   const ordered = [...landmarks].sort((a, b) => Number(near.has(b.nodeId)) - Number(near.has(a.nodeId)));
@@ -82,12 +100,15 @@ export async function matchLandmark(args: {
   content.push({
     text:
       "Which single reference landmark is clearly visible in the shopper frames? Answer with its id, or null if none is clearly visible. " +
-      "Use high confidence only when distinctive text or a unique feature matches. Never guess between two similar landmarks — answer null instead.",
+      "Use high confidence only when distinctive text or a unique feature matches. Never guess between two similar landmarks — answer null instead. " +
+      "Also list in products_seen each distinct retail product visible on shelves in the shopper frames: name, brand, variant, size and " +
+      "product type (category). Use null for any field whose text is not legible; do not infer it. Ignore people. Low confidence when packaging is partly hidden.",
   });
 
-  const match = await structuredVision(LandmarkMatch, content, { maxTokens: 2000, effort: "low" });
-  if (!match) {
-    return { confidence_state: "UNKNOWN", selected_node_id: null, candidate_node_ids: [], landmark_id: null, evidence: "Could not analyze the scan." };
+  const reading = await structuredVision(ScanReading, content, { maxTokens: 4000, effort: "low" });
+  if (!reading) {
+    return { confidence_state: "UNKNOWN", selected_node_id: null, candidate_node_ids: [], landmark_id: null, evidence: "Could not analyze the scan.", products_seen: [] };
   }
-  return decidePosition(match, landmarks, graph, previousNodeId);
+  const { products_seen, ...match } = reading;
+  return { ...decidePosition(match, landmarks, graph, previousNodeId), products_seen: products_seen.slice(0, MAX_PRODUCTS_PER_SCAN) };
 }

@@ -67,10 +67,20 @@ Response 200:
 The last step is always the arrival sentence. Each request re-reads the product's location, so a staff move takes effect on the next request.
 
 ### ✅ `POST /api/localize`
-Request (JSON): `{ "store_id", "previous_node_id"?: string|null, "lat"?, "lng"?, "frames": ["data:image/jpeg;base64,…"] }`. Send 1–3 frames, each ≤ ~1.5 MB.
-Response: `{ "confidence_state": "CONFIRMED|LIKELY|UNKNOWN", "selected_node_id": "N03" | null, "candidate_node_ids": [], "landmark_id": "L03" | null, "evidence": "…" }`
+Request (JSON): `{ "store_id", "previous_node_id"?: string|null, "lat"?, "lng"?, "frames": ["data:image/jpeg;base64,…"], "share_sightings"?: boolean (default true), "at_node_id"?: string|null }`. Send 1–3 frames, each ≤ ~1.5 MB. `at_node_id` is the node the shopper was guided to (e.g. on ARRIVED); it is used only to attribute product sightings, never as a position.
+Response: `{ "confidence_state": "CONFIRMED|LIKELY|UNKNOWN", "selected_node_id": "N03" | null, "candidate_node_ids": [], "landmark_id": "L03" | null, "evidence": "…", "products_noted": 3 }`
 The model only names the visible landmark. `lib/vision/matchLandmark.ts#decidePosition` decides the confidence state using map adjacency to `previous_node_id`. Frames are never stored. Returns 503 with `UNKNOWN` when no AI provider key (`GEMINI_API_KEY` or `ANTHROPIC_API_KEY`) is set.
 Shopper flow: call this, then pass the result as `scan` to `/api/agent/shopper`.
+The same vision call also lists products visible in the frames; they feed the adaptive inventory below (text only).
+
+### ✅ Adaptive inventory (staff): `GET /api/inventory`, `GET /api/inventory/suggestions`, `POST /api/inventory/suggestions/:id`
+Shopper scans → `lib/inventory/reconcile.ts#planScan` → suggestions → staff approve → published list. UI: `/staff/inventory`.
+- Seen at its listed shelf → `last_seen_at` refreshed, `miss_count` reset, any open "possibly gone" suggestion auto-resolves. No approval: nothing shoppers see changes.
+- Not listed → `NEW_PRODUCT` (queued after 1 sighting). Listed elsewhere → `MOVED` (2). Shelf in view, other items on it seen, this one not → `MISSING` (3). Below the threshold a suggestion is `COLLECTING`; at it, `PENDING`.
+- Shelf comes from the map (shelves anchored at the shopper's node), never from the image. MOVED/MISSING only when the shopper stands at the shelves, not from a walkway.
+- `GET /api/inventory?store_id=` → `{ items: [{ product_id, name, brand, variant, size, category, shelf_id, aisle, section, level, verified_at, last_seen_at, miss_count }], pending_count }`
+- `GET /api/inventory/suggestions?store_id=&status=PENDING[,COLLECTING,APPROVED,REJECTED,AUTO_RESOLVED]` → `{ suggestions }`
+- `POST /api/inventory/suggestions/:id` `{ "action": "approve", "shelf_id"?, "level"?, "edits"?: { name, brand, variant, size, category }, "note"? }` or `{ "action": "reject", "note"? }`. Approve applies it atomically (`approve_suggestion`: insert product + `move_product`, `move_product`, or unpublish) and audits it. 409 if no longer PENDING.
 
 ### `POST /api/media` (staff)
 Multipart `store_id`, `shelf_id`, and `file`. Returns `{ media_id, url }`. Video frames are extracted on the client and each frame is posted as an image with `kind=video_frame`.
@@ -101,6 +111,7 @@ Multipart `store_id`, `shelf_id`, and `file`. Returns `{ media_id, url }`. Video
 - Left and right are stated only when derivable (after the first leg, or from a node's known `facingDeg`).
 - Unknown position means no turn-by-turn guidance.
 - Shopper camera frames and audio are never persisted or logged.
+- Shopper sightings are stored as structured text only (no images, no shopper identity) and change the published list only after staff approval.
 
 ## Agents (added for the Amazon, LangChain and CoStar tracks)
 

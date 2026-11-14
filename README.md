@@ -32,6 +32,9 @@ curl -X POST localhost:3000/api/agent/shopper -H 'content-type: application/json
   -d '{"nav":{"store_id":"demo-store","current_node_id":"N01","position_confidence":"CONFIRMED"},"history":[],"utterance":"I need eggs"}'
 ```
 
+### Adaptive inventory
+Every shopper scan (`/api/localize`) also lists the products visible in the frames. Where the shopper's position is known, they become inventory updates: items seen in place refresh "last seen"; new, moved or missing items become suggestions that staff approve or reject at **`/staff/inventory`** (enter the staff token; memory mode uses `STAFF_DEMO_TOKEN`). Nothing reaches shoppers until approved. Only text is stored, never images. Apply `supabase/migrations/003_adaptive_inventory.sql` in Supabase mode.
+
 ### CoStar track data (real)
 1. In the track Discord run `/costar-keys`; put `MATTERPORT_API_KEY`, `MATTERPORT_API_TOKEN`, `VEXCEL_API_KEY` in `.env.local`.
 2. Download `models_index.csv` from the track quickstart page into `data/` (git-ignored). It maps CoStar property ids to Matterport models.
@@ -45,7 +48,7 @@ Track strategy: `docs/tracks.md`.
 ## Supabase setup
 
 1. Create a project and copy its URL and anon key into `.env.local`.
-2. In the SQL editor, run `supabase/migrations/001_init.sql`, then `002_tracks.sql`, then `supabase/seed.sql`.
+2. In the SQL editor, run `supabase/migrations/001_init.sql`, then `002_tracks.sql`, then `003_adaptive_inventory.sql`, then `supabase/seed.sql`.
 3. Create a staff user (Auth → Users), then run `insert into store_staff (store_id, user_id) values ('demo-store', '<user uuid>');`
 
 Once `NEXT_PUBLIC_SUPABASE_URL` is set, the app reads from Supabase instead of the in-memory seed.

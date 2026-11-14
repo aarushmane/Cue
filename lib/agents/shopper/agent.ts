@@ -21,7 +21,8 @@ How you work:
 - When the shopper says things like "done", "okay", "next" or "I'm here" while being guided, call next_step. "Again" or "what?" means repeat_step.
 - If the product isn't there or something is wrong, offer report_issue. If they want a person, or no route exists, use request_help.
 - If they ask you to talk less, more, slower or faster, call set_preferences.
-- This app supplements a cane, a guide dog and their own judgment. It does not detect obstacles; mention this once if they ask about safety.`;
+- This app supplements a cane, a guide dog and their own judgment. It does not detect obstacles; mention this once if they ask about safety.
+- If asked about privacy: scans are used to find their position and to tell the store which products are on the shelves, as text only. Photos and voice are never saved, and they can turn product sharing off in settings.`;
 
 const VERBOSITY = {
   concise: "Reply in at most one short sentence, or a few words. The shopper prefers brevity.",

@@ -72,6 +72,7 @@ export interface Product {
   variant: string | null;
   size: string | null;
   aliases: string[];
+  category?: string | null; // product type, e.g. "plant-based milk"
 }
 
 export type ShelfLevel = "top" | "upper" | "middle" | "lower" | "bottom";
@@ -81,6 +82,8 @@ export interface ProductLocation {
   shelfId: string;
   level: ShelfLevel | null;
   verifiedAt: string; // ISO timestamp
+  lastSeenAt?: string | null; // last time a shopper's camera saw it at this location
+  missCount?: number; // consecutive scans that looked at this shelf without seeing it
 }
 
 /** A product joined with its current published location. Only these are visible to shoppers. */
