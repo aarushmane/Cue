@@ -123,10 +123,13 @@ function nodeLabel(n: FloorPlan["nodes"][number], m: FloorPlan): string {
   return cat ? `the approach to Aisle ${cat.aisle}, Section ${cat.section} (${AISLE_NAMES[cat.aisle] ?? ""})` : `walk point ${n.id}`;
 }
 
-/** Published editor map → StoreGraph consumed by lib/routing and /api/routes. Walk points become junctions. */
-export function toStoreGraph(m: FloorPlan, storeId: string): StoreGraph {
-  const W = DEMO_STORE.widthM;
-  const H = (DEMO_STORE.widthM / (m.aspect || 1.5));
+/**
+ * Published editor map → StoreGraph consumed by lib/routing and /api/routes. Walk points become junctions.
+ * `widthM` is the store's physical width (the plan's height follows from its aspect).
+ */
+export function toStoreGraph(m: FloorPlan, storeId: string, widthM: number = DEMO_STORE.widthM): StoreGraph {
+  const W = widthM;
+  const H = W / (m.aspect || 1.5);
   const nodes: MapNode[] = m.nodes.map((n) => ({
     id: n.id, x: n.x, y: n.y, kind: (n.kind === "walk" ? "junction" : n.kind) as NodeKind, label: nodeLabel(n, m),
   }));

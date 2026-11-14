@@ -9,9 +9,12 @@ import {
   getMaps, listObservations, listProducts, moveProduct as memMove, publishMap as memPublishMap, reviewObservation as memReview,
   saveMapDraft as memSaveMap, submitShopperObservation as memSubmit,
 } from "../db/demoState";
+import { SupabaseRepo } from "../db/repo";
+import { mapChecks } from "../map/graph";
 import { DEMO_STAFF } from "../seed/demo-review";
 import { DEMO_STORE } from "../seed/demo-store";
-import type { FloorPlan, ObservationCandidate, ReviewDraft, ShelfLevel } from "../types";
+import type { FloorPlan, ObservationCandidate, PublishedProduct, ReviewDraft, ShelfLevel } from "../types";
+import { graphPayload, readStoreMaps } from "./maps";
 
 export type Out = { status: number; body: Record<string, unknown> };
 export interface Actor { userId: string | null; label: string }
@@ -132,20 +135,62 @@ export async function moveProduct(id: string, shelfId: string, level: ShelfLevel
 }
 
 // ───────────────────────────── Floor plan ─────────────────────────────
+// Supabase: 005_map_editor.sql (save_map_draft / publish_map) and lib/staff/maps.ts. `mapId` is the store's
+// PUBLISHED map, as in memory mode. Both backends answer save with { maps } and publish with { version, ... }.
 
-const MAPS_NOT_BUILT = () =>
-  fail(501, "NOT_IMPLEMENTED", "Saving and publishing floor plans to Supabase is not built yet (the editor's shelf rectangles and landmarks need a table mapping). Memory mode works.");
-
-export async function saveMapDraft(mapId: string, draft: FloorPlan): Promise<Out> {
-  if (supabaseMode()) return MAPS_NOT_BUILT();
-  const r = memSaveMap(mapId, draft, DEMO_STAFF);
-  return r.ok ? { status: 200, body: { maps: r.maps } } : fail(r.status, r.code, r.error);
+export async function saveMapDraft(mapId: string, draft: FloorPlan, actor: Actor): Promise<Out> {
+  if (!supabaseMode()) {
+    const r = memSaveMap(mapId, draft, DEMO_STAFF);
+    return r.ok ? { status: 200, body: { maps: r.maps } } : fail(r.status, r.code, r.error);
+  }
+  const db = getAdminDb();
+  if (!db) return noDb();
+  const { data, error } = await db.rpc("save_map_draft", { p_map_id: mapId, p_payload: draft, p_actor: actor.userId, p_actor_label: actor.label });
+  if (error) return dbError(error);
+  const out = fromSql(data);
+  if (out.status !== 200) return out;
+  const storeId = await mapStore(mapId);
+  const maps = storeId ? await readStoreMaps(db, storeId).catch(() => null) : null;
+  if (!maps) return fail(500, "DB_ERROR", "The draft was saved but couldn't be read back. Reload the editor.");
+  return { status: 200, body: { maps: { published: maps.published, draft: maps.draft, draftSavedAt: maps.draftSavedAt } } };
 }
 
-export async function publishMap(mapId: string): Promise<Out> {
-  if (supabaseMode()) return MAPS_NOT_BUILT();
-  const r = memPublishMap(mapId, DEMO_STAFF);
-  return r.ok ? { status: 200, body: { version: r.maps.published.version, event: r.event } } : fail(r.status, r.code, r.error, r.failing ? { failing: r.failing } : {});
+export async function publishMap(mapId: string, actor: Actor): Promise<Out> {
+  if (!supabaseMode()) {
+    const r = memPublishMap(mapId, DEMO_STAFF);
+    return r.ok ? { status: 200, body: { version: r.maps.published.version, event: r.event } } : fail(r.status, r.code, r.error, r.failing ? { failing: r.failing } : {});
+  }
+  const db = getAdminDb();
+  if (!db) return noDb();
+  const storeId = await mapStore(mapId);
+  if (!storeId) return fail(404, "NOT_FOUND", "Map not found.");
+  let maps: Awaited<ReturnType<typeof readStoreMaps>>;
+  let products: PublishedProduct[];
+  let widthM: number;
+  try {
+    [maps, products] = await Promise.all([readStoreMaps(db, storeId), new SupabaseRepo(db).listPublishedProducts(storeId)]);
+    const { data } = await db.from("stores").select("width_m").eq("id", storeId).maybeSingle();
+    widthM = (data as { width_m?: number } | null)?.width_m ?? 30;
+  } catch {
+    return fail(500, "DB_ERROR", "The database request failed. Try again.");
+  }
+  if (!maps) return fail(404, "NOT_FOUND", "Map not found.");
+  if (maps.published.mapId !== mapId) {
+    return fail(409, "CONFLICT", "A newer floor plan was published since you opened this one. Reload the editor.");
+  }
+  const d = maps.draft;
+  if (!d || maps.draftRev === null) return fail(422, "INVALID", "Save a draft before publishing.");
+  // Same publish checklist as memory mode, on the server (the editor's copy is not trusted).
+  const fails = mapChecks(d, products).filter((c) => !c.ok);
+  if (fails.length) return fail(422, "INVALID", "The draft does not pass the publish checklist.", { failing: fails.map((f) => f.label) });
+  const { payload, unknownShelves } = graphPayload(d, storeId, widthM);
+  if (unknownShelves.length) {
+    return fail(422, "INVALID", `Unknown shelf ID: ${unknownShelves.join(", ")}.`, { failing: ["Every shelf region has a shelf ID"] });
+  }
+  const { data, error } = await db.rpc("publish_map", { p_map_id: mapId, p_draft_rev: maps.draftRev, p_graph: payload, p_actor: actor.userId, p_actor_label: actor.label });
+  if (error) return dbError(error);
+  const out = fromSql(data);
+  return out.status === 200 ? { status: 200, body: { version: data.version, map_id: data.map_id } } : out;
 }
 
 // ───────────────────────────── Shopper submission ─────────────────────────────

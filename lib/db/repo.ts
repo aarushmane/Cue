@@ -122,7 +122,7 @@ class MemoryRepo implements StoreRepo {
 }
 
 // ───────────────────────────── Supabase ─────────────────────────────
-class SupabaseRepo implements StoreRepo {
+export class SupabaseRepo implements StoreRepo {
   readonly kind = "supabase" as const;
   constructor(private db: SupabaseClient) {}
 
