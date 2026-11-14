@@ -58,6 +58,8 @@ Every shopper scan (`/api/localize`) also lists the products visible in the fram
 3. Optional: unzip the CoStar kit into `data/costar-kit/` and set `COSTAR_KIT_DIR=data/costar-kit`.
 4. Onboard by CoStar id or Matterport model id, e.g. `{"costar_property_id":"9560712"}` (337 S Broadway, LA: Office/Retail, 86 scan points, 2 floors) or `{"costar_property_id":"bP9oEnqmeie"}` (941 Towne Ave, LA: Retail, 40 scan points). `fixture-property-1` still works.
 
+Run `npm run check:costar` after adding the keys: it confirms `neighbors`, floor plans, Vexcel coverage and LangSmith before you demo.
+
 The import uses Matterport anchor locations (position, floor, room, **navigation neighbors**) when the key exposes them, otherwise pano positions plus proximity edges that never cross a wall from the wall graph. Hackathon data is for hackathon use only: never commit it.
 
 Track strategy: `docs/tracks.md`.

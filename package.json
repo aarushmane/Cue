@@ -12,7 +12,8 @@
     "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit",
     "seed:sql": "node scripts/gen-seed.mts",
-    "eval:localize": "node --env-file-if-exists=.env.local scripts/eval-localize.mts"
+    "eval:localize": "node --env-file-if-exists=.env.local scripts/eval-localize.mts",
+    "check:costar": "node --env-file-if-exists=.env.local scripts/check-costar.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.8.0",
