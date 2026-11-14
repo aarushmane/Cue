@@ -40,3 +40,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Hackathon data (CoStar track): hackathon use only, never commit
+/data/models_index.csv
+/data/costar-kit/

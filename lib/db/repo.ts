@@ -3,7 +3,7 @@
 //  - MemoryRepo:   seeded in-memory data, so the app and tests run before Supabase is configured.
 // Server-only: never import this from a "use client" component.
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { Landmark, PublishedProduct, Shelf, StoreGraph } from "../types";
+import type { Landmark, Product, ProductLocation, PublishedProduct, Shelf, StoreGraph } from "../types";
 import * as seed from "../seed/demo-store";
 
 export interface StoreSummary {
@@ -23,6 +23,43 @@ export interface StoreRepo {
 }
 
 // ───────────────────────────── Memory ─────────────────────────────
+// Mutable copies so staff edits work in memory mode (and in tests). Reset on server restart.
+const memProducts: Product[] = seed.DEMO_PRODUCTS.map((p) => ({ ...p, aliases: [...p.aliases] }));
+const memLocations: ProductLocation[] = seed.DEMO_LOCATIONS.map((l) => ({ ...l, lastSeenAt: null, missCount: 0 }));
+
+/** Memory-mode state for the inventory module (lib/inventory). Server-only. */
+export function memoryInventory() {
+  return { products: memProducts, locations: memLocations, shelves: seed.DEMO_SHELVES };
+}
+
+/** Memory-mode: add a product with a published location. */
+export function memoryAddProduct(p: Omit<Product, "id">, shelfId: string, level: ProductLocation["level"]): string | null {
+  if (!seed.DEMO_SHELVES.some((s) => s.id === shelfId)) return null;
+  const id = `P-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  memProducts.push({ ...p, id });
+  memLocations.push({ productId: id, shelfId, level, verifiedAt: new Date().toISOString(), lastSeenAt: new Date().toISOString(), missCount: 0 });
+  return id;
+}
+
+/** Memory-mode: unpublish a product's location (staff confirmed it is gone). */
+export function memoryRetireLocation(productId: string): boolean {
+  const i = memLocations.findIndex((l) => l.productId === productId);
+  if (i < 0) return false;
+  memLocations.splice(i, 1);
+  return true;
+}
+
+/** Memory-mode equivalent of the move_product SQL function. Returns false for unknown product/shelf. */
+export function memoryMoveProduct(productId: string, shelfId: string, level: PublishedProduct["location"]["level"]): boolean {
+  const loc = memLocations.find((l) => l.productId === productId);
+  if (!loc || !seed.DEMO_SHELVES.some((s) => s.id === shelfId)) return false;
+  loc.shelfId = shelfId;
+  loc.level = level;
+  loc.verifiedAt = new Date().toISOString();
+  loc.missCount = 0;
+  return true;
+}
+
 class MemoryRepo implements StoreRepo {
   readonly kind = "memory" as const;
 
@@ -48,10 +85,10 @@ class MemoryRepo implements StoreRepo {
   async listPublishedProducts(storeId: string): Promise<PublishedProduct[]> {
     if (storeId !== seed.DEMO_STORE.id) return [];
     const shelves = new Map(seed.DEMO_SHELVES.map((s) => [s.id, s]));
-    return seed.DEMO_PRODUCTS.flatMap((p) => {
-      const location = seed.DEMO_LOCATIONS.find((l) => l.productId === p.id);
+    return memProducts.flatMap((p) => {
+      const location = memLocations.find((l) => l.productId === p.id);
       const shelf = location && shelves.get(location.shelfId);
-      return location && shelf ? [{ ...p, location, shelf: { id: shelf.id, aisle: shelf.aisle, section: shelf.section } }] : [];
+      return location && shelf ? [{ ...p, location: { ...location }, shelf: { id: shelf.id, aisle: shelf.aisle, section: shelf.section } }] : [];
     });
   }
 
@@ -106,7 +143,7 @@ class SupabaseRepo implements StoreRepo {
       await this.db
         .from("product_locations")
         .select(
-          "shelf_id, level, verified_at, products!inner(id, store_id, name, brand, variant, size, aliases), shelves!inner(id, aisle, section)",
+          "shelf_id, level, verified_at, last_seen_at, miss_count, products!inner(id, store_id, name, brand, variant, size, aliases, category), shelves!inner(id, aisle, section)",
         )
         .eq("status", "PUBLISHED")
         .eq("products.store_id", storeId),
@@ -114,7 +151,9 @@ class SupabaseRepo implements StoreRepo {
       shelf_id: string;
       level: PublishedProduct["location"]["level"];
       verified_at: string;
-      products: { id: string; store_id: string; name: string; brand: string | null; variant: string | null; size: string | null; aliases: string[] };
+      last_seen_at: string | null;
+      miss_count: number;
+      products: { id: string; store_id: string; name: string; brand: string | null; variant: string | null; size: string | null; aliases: string[]; category: string | null };
       shelves: { id: string; aisle: string; section: string };
     }[];
     return rows.map((r) => ({
@@ -125,7 +164,8 @@ class SupabaseRepo implements StoreRepo {
       variant: r.products.variant,
       size: r.products.size,
       aliases: r.products.aliases ?? [],
-      location: { productId: r.products.id, shelfId: r.shelf_id, level: r.level, verifiedAt: r.verified_at },
+      category: r.products.category,
+      location: { productId: r.products.id, shelfId: r.shelf_id, level: r.level, verifiedAt: r.verified_at, lastSeenAt: r.last_seen_at, missCount: r.miss_count },
       shelf: r.shelves,
     }));
   }
