@@ -26,7 +26,7 @@ Coordinates are normalized to 0..1 with the origin at the top-left of the floor 
 ```
 NodeKind:            entrance | junction | aisle_marker | shelf_approach | service
 ShelfLevel:          top | upper | middle | lower | bottom
-Observation review:  NEEDS_REVIEW | ACCEPTED | EDITED | REJECTED
+Observation review:  NEEDS_REVIEW | ACCEPTED | EDITED | REJECTED | NEEDS_RESCAN   (NEEDS_RESCAN: proposed, see below)
 Location status:     PUBLISHED | SUPERSEDED
 Localization:        CONFIRMED | LIKELY | UNKNOWN
 Navigation state:    SEARCHING | DESTINATION_SELECTED | LOCATING | ROUTING | GUIDING | ARRIVED | NEEDS_HELP
@@ -78,6 +78,23 @@ Multipart `store_id`, `shelf_id`, and `file`. Returns `{ media_id, url }`. Video
 ### `POST /api/observations/:id/review` (staff)
 `{ action: "accept"|"edit"|"reject", product_id?: string, new_product?: {name,brand,variant,size,aliases}, shelf_id, level }`
 `accept` and `edit` call `move_product(...)`, which writes the location and the audit event in one transaction.
+
+**Proposed v4 extension (design handoff; not yet implemented as a route).** The v4 Review screen also sends
+`action: "rescan"` with a required `reason` (≥ 5 characters). Expected behavior:
+
+- Sets `review_status = 'NEEDS_RESCAN'`, stores the reason, the reviewer and `reviewed_at`, and writes an audit event.
+- Inventory and product locations are **not** changed (same as `reject`).
+- A `NEEDS_RESCAN` observation leaves the Pending queue, is never used for search or directions, and cannot be
+  approved, rejected or rescanned again (409, like any non-`NEEDS_REVIEW` status). New evidence arrives as a new
+  observation (or as an added sighting of a pending one).
+- Server order for every action: staff authorized for the observation's store (403) → still `NEEDS_REVIEW` (409) →
+  observation `version` matches (409) → re-run `validate()` for publish (422 with failing labels) → merge target
+  `version` matches (409) → one transaction.
+
+Until this route exists, the UI calls the in-memory demo adapter in `lib/demo/adapter.ts`
+(`reviewObservationDemo`), which implements this order against `lib/db/demoState.ts` and is labelled
+"Demo action" on screen. The database change it needs is drafted, **not applied**, in
+`docs/proposals/002_needs_rescan.sql`.
 
 ### `PATCH /api/products/:id/location` (staff)
 `{ shelf_id, level }` → `{ location }`. Uses the `move_product` SQL function. Requests without staff auth get 401 or 403 (test P01).

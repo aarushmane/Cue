@@ -148,11 +148,40 @@ const P: SeedProduct[] = [
 
 const SEED_VERIFIED_AT = "2026-11-14T00:00:00.000Z";
 
-export const DEMO_PRODUCTS: Product[] = P.map((p) => ({ id: p.id, storeId: DEMO_STORE.id, name: p.name, brand: p.brand, variant: p.variant, size: p.size, aliases: p.aliases }));
+/** Staff-facing product categories (v4 design handoff). */
+export const CATEGORIES = ["Produce", "Bakery", "Dairy", "Dairy alternatives", "Pantry", "Breakfast", "Household", "Snacks"] as const;
+
+/** Display names for aisles, used on staff screens and in detailed shopper speech. */
+export const AISLE_NAMES: Record<string, string> = {
+  "1": "Produce & Bakery",
+  "2": "Dairy & Alternatives",
+  "3": "Pantry",
+  "4": "Household & Snacks",
+};
+
+const CATEGORY_BY_ID: Record<string, string> = {
+  P01: "Produce", P02: "Produce", P03: "Bakery", P04: "Bakery", P05: "Produce",
+  P06: "Dairy alternatives", P07: "Dairy alternatives", P08: "Dairy", P09: "Dairy alternatives", P10: "Dairy",
+  P11: "Dairy", P12: "Dairy", P13: "Pantry", P14: "Pantry", P15: "Pantry", P16: "Pantry",
+  P17: "Breakfast", P18: "Breakfast", P19: "Household", P20: "Household", P21: "Snacks", P22: "Snacks",
+};
+
+export const DEMO_PRODUCTS: Product[] = P.map((p) => ({
+  id: p.id,
+  storeId: DEMO_STORE.id,
+  name: p.name,
+  brand: p.brand,
+  variant: p.variant,
+  size: p.size,
+  aliases: p.aliases,
+  category: CATEGORY_BY_ID[p.id] ?? null,
+  version: 1,
+}));
 
 export const DEMO_LOCATIONS: ProductLocation[] = P.map((p) => ({
   productId: p.id,
   shelfId: p.shelfId,
   level: p.level,
   verifiedAt: SEED_VERIFIED_AT,
+  verifiedBy: "Seed data",
 }));

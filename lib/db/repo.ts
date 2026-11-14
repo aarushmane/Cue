@@ -5,6 +5,8 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Landmark, PublishedProduct, Shelf, StoreGraph } from "../types";
 import * as seed from "../seed/demo-store";
+import { db as demoDb } from "./demoState";
+import { toStoreGraph } from "../map/graph";
 
 export interface StoreSummary {
   id: string;
@@ -33,6 +35,9 @@ class MemoryRepo implements StoreRepo {
 
   async getPublishedGraph(storeId: string): Promise<StoreGraph | null> {
     if (storeId !== seed.DEMO_STORE.id) return null;
+    // A floor plan published from the staff editor (v2+) replaces the seeded map for routing.
+    const published = demoDb().maps.published;
+    if (published.version !== seed.DEMO_MAP.version) return toStoreGraph(published, storeId);
     return {
       storeId,
       mapId: seed.DEMO_MAP.id,
@@ -47,12 +52,9 @@ class MemoryRepo implements StoreRepo {
 
   async listPublishedProducts(storeId: string): Promise<PublishedProduct[]> {
     if (storeId !== seed.DEMO_STORE.id) return [];
-    const shelves = new Map(seed.DEMO_SHELVES.map((s) => [s.id, s]));
-    return seed.DEMO_PRODUCTS.flatMap((p) => {
-      const location = seed.DEMO_LOCATIONS.find((l) => l.productId === p.id);
-      const shelf = location && shelves.get(location.shelfId);
-      return location && shelf ? [{ ...p, location, shelf: { id: shelf.id, aisle: shelf.aisle, section: shelf.section } }] : [];
-    });
+    // Starts as the seed; staff approvals and moves (lib/db/demoState.ts) update it, so shopper search and
+    // routes pick up a published change on the very next request.
+    return demoDb().products.filter((p) => p.storeId === storeId).map((p) => ({ ...p, aliases: [...p.aliases], location: { ...p.location }, shelf: { ...p.shelf } }));
   }
 
   async listLandmarks(storeId: string): Promise<Landmark[]> {
