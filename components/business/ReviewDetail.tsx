@@ -189,7 +189,7 @@ export function ReviewDetail({ id }: { id: string }) {
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <h2 id="ev-h" className="m-0 text-[15px] font-bold">Original observation</h2>
           <span className="text-[15px] leading-[1.4]">{candStr(o.candidate)}</span>
-          <span className="text-sm leading-[1.4] text-muted">{o.evidence}</span>
+          <span className="text-sm leading-[1.4] text-muted [overflow-wrap:anywhere]">{o.evidence}</span>
           <span className="text-sm text-muted">
             Confidence: {o.confidence} · Seen {fmt(o.at)}
           </span>

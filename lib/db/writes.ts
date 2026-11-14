@@ -3,6 +3,7 @@
 import type { DraftGraph } from "../twin/sweepsToGraph";
 import type { ShelfCandidate } from "../vision/recognizeShelf";
 import { getAdminDb } from "./admin";
+import { addAiObservations, aiEvidence, aiObservationCandidate, type AiCandidate } from "./demoState";
 
 export interface DraftMapRecord {
   id: string;
@@ -50,6 +51,37 @@ export async function saveDraft(record: Omit<DraftMapRecord, "id" | "created_at"
   const { error } = await db.from("agent_runs").update({ output_json: full }).eq("id", record.agent_run_id);
   if (error) throw new Error(error.message);
   return full;
+}
+
+const CONFIDENCE = { high: "High", medium: "Medium", low: "Low" } as const;
+
+/**
+ * Queue AI product suggestions in the staff Review queue: NEEDS_REVIEW, source "ai", no shelf (staff choose it).
+ * Never publishes. Memory mode: the in-memory demo backend that /business/review reads. Supabase mode: rows in
+ * `observations`, which needs migration 004 (store_id, nullable media_id, source, evidence, confidence).
+ */
+export async function queueAiObservations(storeId: string, candidates: AiCandidate[], evidence: string): Promise<{ ids: string[] }> {
+  const db = getAdminDb();
+  if (!db) {
+    const r = addAiObservations(storeId, candidates, evidence);
+    if (!r.ok) throw new Error(r.error);
+    return { ids: r.observations.map((o) => o.id) };
+  }
+  const rows = candidates
+    .filter((c) => c.name?.trim())
+    .map((c) => ({
+      store_id: storeId,
+      media_id: null,
+      source: "ai",
+      review_status: "NEEDS_REVIEW",
+      candidate_json: aiObservationCandidate(c),
+      confidence: CONFIDENCE[c.confidence] ?? "Low",
+      evidence: aiEvidence(evidence, c),
+    }));
+  if (!rows.length) return { ids: [] };
+  const { data, error } = await db.from("observations").insert(rows).select("id");
+  if (error) throw new Error(error.message);
+  return { ids: (data ?? []).map((r) => String((r as { id: string }).id)) };
 }
 
 export async function startAgentRun(input: Record<string, unknown>, storeId: string | null, userId: string | null): Promise<string> {

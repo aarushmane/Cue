@@ -45,7 +45,7 @@ export const Q_BASICS = `query Basics($id: ID!) { model(id: $id) {
 
 const FLOORS_AND_PLANS = `
   floors { id label vertices { id position { x y } } edges { id type vertices { id } } }
-  assets { floorplans(provider: "matterport") { format flags url width height resolution origin { x y } } }`;
+  assets { floorplans(provider: "matterport") { format flags url width height resolution origin { x y } floor { id } } }`;
 
 /** Preferred: anchor locations carry Matterport's navigation neighbors, floor and room. */
 export const Q_TWIN_LOCATIONS = `query Twin($id: ID!) { model(id: $id) {${FLOORS_AND_PLANS}
@@ -62,7 +62,7 @@ export const Q_TWIN_PANOS = `query TwinPanos($id: ID!) { model(id: $id) {${FLOOR
 
 interface Pt { x?: number; y?: number; z?: number }
 interface RawFloor { id: string; label?: string; vertices?: { id: string; position?: Pt }[]; edges?: { id: string; type?: string; vertices?: { id: string }[] }[] }
-interface RawPlan { format?: string; flags?: string[]; url?: string; width?: number; height?: number; resolution?: number; origin?: Pt }
+interface RawPlan { format?: string; flags?: string[]; url?: string; width?: number; height?: number; resolution?: number; origin?: Pt; floor?: { id: string } | null }
 interface RawSkybox { children?: string[] }
 export interface RawTwin {
   floors?: RawFloor[];
@@ -144,7 +144,7 @@ export function mapTwin(modelId: string, raw: RawTwin): TwinModel {
 
   const floorPlans: FloorPlanImage[] = (raw.assets?.floorplans ?? [])
     .filter((p) => p.format === "jpg" && p.url && (p.flags ?? []).join() === "photogramy" && p.resolution && p.origin)
-    .map((p) => ({ url: p.url!, width: p.width ?? 0, height: p.height ?? 0, resolution: p.resolution!, originX: p.origin!.x ?? 0, originY: p.origin!.y ?? 0 }));
+    .map((p) => ({ url: p.url!, width: p.width ?? 0, height: p.height ?? 0, resolution: p.resolution!, originX: p.origin!.x ?? 0, originY: p.origin!.y ?? 0, floorId: p.floor?.id ?? null }));
 
   return { modelId, floors, sweeps, panoramas, floorPlanImageUrl: floorPlans[0]?.url ?? null, floorPlans, walls, rooms };
 }

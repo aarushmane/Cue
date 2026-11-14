@@ -6,7 +6,7 @@ import { sweepsToGraph } from "../../twin/sweepsToGraph";
 import { recognizeShelf } from "../../vision/recognizeShelf";
 import { analyzeAerial } from "../../vision/aerial";
 import { aiConfigured } from "../../ai/provider";
-import { saveDraft } from "../../db/writes";
+import { queueAiObservations, saveDraft } from "../../db/writes";
 import { logEvent, type OnboardingRun } from "./run-context";
 
 const json = (v: unknown) => JSON.stringify(v);
@@ -161,7 +161,7 @@ export function onboardingTools(run: OnboardingRun) {
     async () => {
       if (!run.graph) return json({ error: "Nothing to save: build_draft_graph first." });
       const d = await saveDraft({
-        store_id: null,
+        store_id: run.storeId,
         agent_run_id: run.runId,
         source: run.layers.source,
         graph: run.graph,
@@ -169,8 +169,27 @@ export function onboardingTools(run: OnboardingRun) {
         candidates: run.candidates,
       });
       run.draftId = d.id;
-      logEvent(run, "save_draft", { draft_id: d.id });
-      return json({ draft_id: d.id, status: "DRAFT — staff must review and publish in the map editor" });
+      // Product suggestions go to the staff Review queue as NEEDS_REVIEW (no shelf). Only once per run, so a repeated
+      // save_draft call doesn't queue duplicates. A failure here doesn't lose them: they are inside the draft.
+      let review: { queued: number } | { error: string } = { queued: run.observationIds.length };
+      if (!run.observationIds.length && run.candidates.length) {
+        const from = run.property ? `${run.property.name} (${run.layers.source === "fixture" ? "fixture data" : "CoStar"})` : "the digital twin";
+        try {
+          const { ids } = await queueAiObservations(run.storeId, run.candidates, `Onboarding agent run ${run.runId}, shelf recognition on ${from}.`);
+          run.observationIds = ids;
+          review = { queued: ids.length };
+        } catch (err) {
+          review = { error: err instanceof Error ? err.message : String(err) };
+        }
+      }
+      logEvent(run, "save_draft", { draft_id: d.id, review });
+      return json({
+        draft_id: d.id,
+        status: "DRAFT — staff must review and publish in the map editor",
+        product_suggestions: "error" in review
+          ? `Could not add suggestions to the Review queue: ${review.error}. They are saved in the draft.`
+          : `${review.queued} queued in Review as NEEDS_REVIEW; staff must choose a shelf for each before publishing.`,
+      });
     },
     {
       name: "save_draft",

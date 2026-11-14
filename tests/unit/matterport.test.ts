@@ -11,7 +11,7 @@ const floors: RawTwin["floors"] = [{
   edges: [{ id: "w1", type: "wall", vertices: [{ id: "a" }, { id: "b" }] }, { id: "o1", type: "door", vertices: [{ id: "c" }, { id: "d" }] }],
 }];
 const plans = { floorplans: [
-  { format: "jpg", flags: ["photogramy"], url: "https://cdn-2.matterport.com/plan.jpg", width: 1903, height: 1289, resolution: 100, origin: { x: -13.781, y: -7.021 } },
+  { format: "jpg", flags: ["photogramy"], url: "https://cdn-2.matterport.com/plan.jpg", width: 1903, height: 1289, resolution: 100, origin: { x: -13.781, y: -7.021 }, floor: { id: "f1" } },
   { format: "jpg", flags: ["photogramy", "colored_rooms"], url: "https://cdn-2.matterport.com/rooms.jpg", resolution: 100, origin: { x: 0, y: 0 } },
 ] };
 const sky = (n: string) => ({ children: [0, 1, 2, 3, 4, 5].map((i) => `https://cdn-2.matterport.com/${n}_skybox${i}.jpg`) });
@@ -34,6 +34,7 @@ describe("mapTwin", () => {
     expect(t.panoramas).toEqual([{ sweepId: "L1", imageUrl: "https://cdn-2.matterport.com/p1_skybox1.jpg" }]);
     expect(t.walls!.f1).toEqual([{ ax: 2, ay: 10, bx: 2, by: -10 }]);
     expect(t.floorPlans).toHaveLength(1);
+    expect(t.floorPlans![0].floorId).toBe("f1");
     expect(t.floorPlanImageUrl).toBe("https://cdn-2.matterport.com/plan.jpg");
   });
 

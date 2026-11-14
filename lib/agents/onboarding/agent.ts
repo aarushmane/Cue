@@ -5,6 +5,7 @@ import { ChatAnthropic } from "@langchain/anthropic";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { convertToOpenAITool } from "@langchain/core/utils/function_calling";
 import { createDeepAgent } from "deepagents";
+import { todoListMiddleware } from "langchain";
 import { CLAUDE_MODEL } from "../../ai/claude";
 import { GEMINI_AGENT_MODEL } from "../../ai/gemini";
 import { toGeminiParameters } from "../../ai/geminiSchema";
@@ -12,8 +13,9 @@ import { aiProvider } from "../../ai/provider";
 import { getDataLayers } from "../../costar";
 import { finishAgentRun, startAgentRun } from "../../db/writes";
 import { extractPlan, runView, type RunView } from "./view";
-import { newRun, type OnboardingRun } from "./run-context";
+import { DEFAULT_STORE_ID, newRun, type OnboardingRun } from "./run-context";
 import { onboardingTools } from "./tools";
+import { createUpdatesAccumulator, type OnboardEvent } from "./progress";
 
 const SYSTEM = `You onboard a physical store into StoreGuide, an indoor navigation app for blind and low-vision shoppers.
 Given a CoStar property id (or a Matterport model id), produce a DRAFT navigation map that store staff will review. You never publish anything.
@@ -54,15 +56,19 @@ export interface OnboardingResult {
   tool_calls: string[];
   graph_summary: { nodes: number; edges: number; components: number; warnings: string[] } | null;
   candidates_queued: number;
+  /** Observation ids added to the staff Review queue (empty if save_draft didn't run or queueing failed). */
+  review_observation_ids: string[];
+  store_id: string;
   log: OnboardingRun["log"];
   /** Display model for the staff onboarding screen (property, draft graph geometry, candidates). */
   view: RunView;
 }
 
-export async function runOnboarding(propertyId: string, startedBy: string | null): Promise<OnboardingResult> {
-  const layers = getDataLayers();
-  const runId = await startAgentRun({ costar_property_id: propertyId }, null, startedBy);
-  const run = newRun(runId, layers);
+export interface OnboardingOptions {
+  store_id?: string;
+}
+
+function buildAgent(run: OnboardingRun) {
   const tools = onboardingTools(run);
   // Same deep agent either way; only the chat model changes.
   const model =
@@ -70,10 +76,14 @@ export async function runOnboarding(propertyId: string, startedBy: string | null
       ? new GeminiChat({ model: GEMINI_AGENT_MODEL, apiKey: process.env.GEMINI_API_KEY, maxOutputTokens: 8000 })
       : new ChatAnthropic({ model: CLAUDE_MODEL, maxTokens: 16000 });
 
-  const agent = createDeepAgent({
+  return createDeepAgent({
     model,
     tools: tools.main,
     systemPrompt: SYSTEM,
+    // deepagents 1.16 no longer bundles write_todos (calls to it failed as "not a valid tool", so state.todos stayed
+    // empty and the plan only survived via extractPlan's fallback). The middleware restores the tool and state.todos,
+    // which is what the live plan streams from.
+    middleware: [todoListMiddleware()],
     subagents: [
       {
         name: "shelf-recognizer",
@@ -83,15 +93,28 @@ export async function runOnboarding(propertyId: string, startedBy: string | null
       },
     ],
   });
+}
+
+type Agent = ReturnType<typeof buildAgent>;
+type AgentInput = Parameters<Agent["invoke"]>[0];
+/** Runs the agent to completion and returns its final state (messages + todos). The only part invoke and stream differ in. */
+type Execute = (agent: Agent, input: AgentInput) => Promise<{ messages?: unknown[]; todos?: unknown }>;
+
+const RECURSION_LIMIT = 60;
+
+/** Shared by the invoke and stream paths: start the run record, run the agent, build the same OnboardingResult. */
+async function executeOnboarding(propertyId: string, startedBy: string | null, opts: OnboardingOptions, execute: Execute): Promise<OnboardingResult> {
+  const storeId = opts.store_id || DEFAULT_STORE_ID;
+  const layers = getDataLayers();
+  const runId = await startAgentRun({ costar_property_id: propertyId, store_id: storeId }, storeId, startedBy);
+  const run = newRun(runId, layers, storeId);
+  const agent = buildAgent(run);
 
   try {
-    const result = await agent.invoke(
-      { messages: [{ role: "user", content: `Onboard CoStar property ${propertyId}.` }] },
-      { recursionLimit: 60 },
-    );
-    const last = result.messages.at(-1);
+    const state = await execute(agent, { messages: [{ role: "user", content: `Onboard CoStar property ${propertyId}.` }] });
+    const last = state.messages?.at(-1) as { content?: unknown } | undefined;
     const report = typeof last?.content === "string" ? last.content : JSON.stringify(last?.content ?? "");
-    const { toolCalls, todos } = extractPlan(result);
+    const { toolCalls, todos } = extractPlan(state);
     await finishAgentRun(runId, "SUCCEEDED", todos, run.log);
     return {
       run_id: runId,
@@ -102,6 +125,8 @@ export async function runOnboarding(propertyId: string, startedBy: string | null
       tool_calls: toolCalls,
       graph_summary: run.graph ? { nodes: run.graph.nodes.length, edges: run.graph.edges.length, components: run.graph.components.length, warnings: run.graph.warnings } : null,
       candidates_queued: run.candidates.length,
+      review_observation_ids: run.observationIds,
+      store_id: run.storeId,
       log: run.log,
       view: runView(run),
     };
@@ -109,4 +134,24 @@ export async function runOnboarding(propertyId: string, startedBy: string | null
     await finishAgentRun(runId, "FAILED", [], [...run.log, { at: new Date().toISOString(), event: "error", detail: String(err) }]);
     throw err;
   }
+}
+
+/** Run to completion and return the result (the Server Function fallback and POST /api/agent/onboard). */
+export function runOnboarding(propertyId: string, startedBy: string | null, opts: OnboardingOptions = {}): Promise<OnboardingResult> {
+  return executeOnboarding(propertyId, startedBy, opts, (agent, input) => agent.invoke(input, { recursionLimit: RECURSION_LIMIT }));
+}
+
+/**
+ * Same run, streamed: calls `onEvent` with plan (todos) and tool-call progress as the graph's nodes finish, then
+ * resolves with the same OnboardingResult as runOnboarding. Aborting `signal` stops the agent (the run is recorded FAILED).
+ */
+export function runOnboardingStream(
+  propertyId: string, startedBy: string | null, opts: OnboardingOptions, io: { onEvent: (e: OnboardEvent) => void; signal?: AbortSignal },
+): Promise<OnboardingResult> {
+  return executeOnboarding(propertyId, startedBy, opts, async (agent, input) => {
+    const acc = createUpdatesAccumulator();
+    const stream = await agent.stream(input, { recursionLimit: RECURSION_LIMIT, streamMode: "updates", signal: io.signal });
+    for await (const chunk of stream) for (const e of acc.push(chunk)) io.onEvent(e);
+    return acc.state();
+  });
 }

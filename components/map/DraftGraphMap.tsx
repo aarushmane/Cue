@@ -1,9 +1,10 @@
 "use client";
 // Read-only drawing of an onboarding draft graph: scan points and walkable paths over the twin's floor plan.
 // Coordinates are normalized 0..1 (MapNode convention); the plan image may extend past the graph's bounds.
-import type { GraphView } from "@/lib/agents/onboarding/view";
+import type { GraphView, PlanDebug } from "@/lib/agents/onboarding/view";
 
 const W = 1000;
+const DEV = process.env.NODE_ENV !== "production";
 
 export function DraftGraphMap({ graph, showPlan = true }: { graph: GraphView; showPlan?: boolean }) {
   const aspect = graph.width_m > 0 && graph.height_m > 0 ? graph.width_m / graph.height_m : 1.5;
@@ -30,6 +31,7 @@ export function DraftGraphMap({ graph, showPlan = true }: { graph: GraphView; sh
             opacity={0.85}
           />
         )}
+        {DEV && graph.debug && <PlanDebugLayer debug={graph.debug} plan={graph.plan} H={H} />}
         <g stroke="#44337A" strokeWidth={3} strokeLinecap="round" opacity={0.75}>
           {graph.edges.map(([a, b]) => {
             const p = byId.get(a);
@@ -53,6 +55,48 @@ export function DraftGraphMap({ graph, showPlan = true }: { graph: GraphView; sh
           ))}
         </g>
       </svg>
+      {DEV && graph.debug && <PlanDebugNumbers debug={graph.debug} plan={graph.plan} />}
     </div>
+  );
+}
+
+// ── Dev-only plan alignment check ──────────────────────────────────────────────────────────────────────────────
+// Red lines are Matterport's walls in the sweeps' frame. If the plan image is placed right, they sit on the drawn walls.
+// Magenta dashes are the computed plan box. Off by a constant = offset; mirrored about the box's middle = flip.
+
+type Placed = GraphView["plan"];
+const f = (n: number, d = 3) => (Number.isFinite(n) ? n.toFixed(d) : String(n));
+
+function PlanDebugLayer({ debug, plan, H }: { debug: PlanDebug; plan: Placed; H: number }) {
+  return (
+    <g pointerEvents="none">
+      <g stroke="#E53E3E" strokeWidth={2} opacity={0.9}>
+        {debug.walls.map((w, i) => <line key={i} x1={w.x1 * W} y1={w.y1 * H} x2={w.x2 * W} y2={w.y2 * H} />)}
+      </g>
+      <rect x={1} y={1} width={W - 2} height={H - 2} fill="none" stroke="#3182CE" strokeWidth={2} strokeDasharray="4 6" />
+      {plan && (
+        <rect x={plan.x * W} y={plan.y * H} width={plan.w * W} height={plan.h * H} fill="none" stroke="#D53F8C" strokeWidth={3} strokeDasharray="12 8" />
+      )}
+    </g>
+  );
+}
+
+function PlanDebugNumbers({ debug, plan }: { debug: PlanDebug; plan: Placed }) {
+  const g = debug.graph;
+  const p = debug.plan;
+  const lines = [
+    `graph   origin (${f(g.originX)}, ${f(g.originY)}) m y-down   size ${f(g.widthM)} × ${f(g.heightM)} m   [blue dashes = 0..1]`,
+    p
+      ? `plan    ${p.width}×${p.height} px @ ${f(p.resolution, 2)} px/m = ${f(p.widthM)} × ${f(p.heightM)} m   origin (bottom-left, world y-up) (${f(p.originX)}, ${f(p.originY)})`
+      : "plan    none for this floor",
+    p ? `        floor ${p.planFloorId ?? "(all floors)"}   matched by ${p.matchedBy}` : "",
+    p ? `        y-down box x ${f(p.originX)}..${f(p.originX + p.widthM)}   y ${f(-(p.originY + p.heightM))}..${f(-p.originY)} m` : "",
+    plan ? `placed  x ${f(plan.x)} y ${f(plan.y)} w ${f(plan.w)} h ${f(plan.h)} (normalized)   [magenta dashes]` : "",
+    `walls   ${debug.walls.length} segments [red]   plans available: ${debug.plansAvailable.map((a) => a.floorId ?? "all").join(", ") || "none"}`,
+  ].filter(Boolean);
+  return (
+    <pre className="overflow-x-auto border-t border-card bg-[#FFF5F7] px-3 py-2 font-mono text-[11px] leading-snug text-[#702459]">
+      {"DEV plan debug\n" + lines.join("\n")}
+    </pre>
   );
 }
