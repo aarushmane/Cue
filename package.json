@@ -9,7 +9,9 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test",
+    "test:e2e": "playwright test && playwright test -c playwright.auth.config.ts",
+    "test:e2e:memory": "playwright test",
+    "test:e2e:auth": "playwright test -c playwright.auth.config.ts",
     "typecheck": "tsc --noEmit",
     "seed:sql": "node scripts/gen-seed.mts"
   },
