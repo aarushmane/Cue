@@ -23,6 +23,19 @@ curl -X POST localhost:3000/api/routes -H 'content-type: application/json' \
   -d '{"store_id":"demo-store","start_node_id":"N01","product_id":"P06"}'
 ```
 
+## Testing on a phone
+
+The mic and camera only work over HTTPS (or on `localhost`), so a phone on your Wi-Fi needs one of:
+
+```bash
+npx next dev --experimental-https              # self-signed cert: open https://<your-laptop-ip>:3000 and accept the warning
+cloudflared tunnel --url http://localhost:3000 # or any tunnel (ngrok, etc.): real HTTPS URL, no warning
+```
+
+- **iPhone (Safari, iOS 18+):** the first tap anywhere unlocks spoken replies (iOS blocks speech output until a tap). Voice input needs Dictation on (Settings → General → Keyboard → Enable Dictation); otherwise the app says so and typing still works. Test with VoiceOver on as well.
+- **Android (Chrome):** voice recognition sends audio to Google's servers, so it needs a connection. Test with TalkBack.
+- **Both:** allow the mic and camera when asked. "Find my position" uses the back camera when there is one, takes about two seconds, and turns the camera off by itself.
+
 ## AI features
 
 Set `GEMINI_API_KEY` (free tier, Google AI Studio) or `ANTHROPIC_API_KEY` in `.env.local`. With both set, Anthropic wins unless `AI_PROVIDER=gemini`. Gemini uses `gemini-3.1-flash-lite` (override with `GEMINI_MODEL`); Claude uses `claude-opus-5-5` (override with `CLAUDE_MODEL`) with server-side refusal fallback. Every provider goes through the same tools and the same zod validation (`lib/ai/provider.ts`, `lib/ai/structured.ts`). Without any key, the agent and localization routes return 503 and the app falls back to typed search and buttons. The free tier is rate-limited per model per day (`gemini-3.5-flash` measured at 20 requests/day; one onboarding run uses about 8–10), so develop on flash-lite, set `GEMINI_AGENT_MODEL=gemini-3.5-flash` only for the demo recording, and don't loop scans during judging.
