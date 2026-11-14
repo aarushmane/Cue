@@ -31,6 +31,12 @@ interface Rec {
 }
 type RecCtor = new () => Rec;
 
+function detach(r: Rec | null) {
+  if (!r) return;
+  r.onspeechend = r.onresult = r.onerror = r.onend = null;
+  try { r.abort(); } catch {}
+}
+
 export function VoiceSurface({ onUnsupported, compact = false, disabled = false }: { onUnsupported: () => void; compact?: boolean; disabled?: boolean }) {
   const { t, setMsg, setQ, ask } = useShopper();
   const [state, setState] = useState<MicState>("idle");
@@ -38,12 +44,13 @@ export function VoiceSurface({ onUnsupported, compact = false, disabled = false 
   // Set when the shopper taps to stop, so the "aborted" error some browsers then fire stays silent.
   const userStopped = useRef(false);
   const stateRef = useRef(state);
-  useEffect(() => {
-    stateRef.current = state;
-  }, [state]);
+  const updateState = (next: MicState) => {
+    stateRef.current = next;
+    setState(next);
+  };
   useEffect(
     () => () => {
-      rec.current?.abort();
+      detach(rec.current);
       setListening(false);
     },
     [],
@@ -56,7 +63,7 @@ export function VoiceSurface({ onUnsupported, compact = false, disabled = false 
         rec.current?.stop();
       } catch {}
       setListening(false);
-      setState("idle");
+      updateState("idle");
       setMsg("Stopped listening.");
       return;
     }
@@ -64,13 +71,14 @@ export function VoiceSurface({ onUnsupported, compact = false, disabled = false 
     const w = window as unknown as { SpeechRecognition?: RecCtor; webkitSpeechRecognition?: RecCtor };
     const SR = w.SpeechRecognition || w.webkitSpeechRecognition;
     if (!SR) {
-      setState("unsupported");
+      updateState("unsupported");
       setMsg("Voice input is not available in this browser. Type the product instead.", true);
       onUnsupported();
       return;
     }
     // Stop any speech output first and keep it off while listening (no echo). This stays synchronous: iOS only
     // allows recognition.start() inside the tap itself, so nothing here may await or use a timer.
+    detach(rec.current);
     setListening(true);
     userStopped.current = false;
     const r = new SR();
@@ -81,7 +89,7 @@ export function VoiceSurface({ onUnsupported, compact = false, disabled = false 
     let got = false;
     r.onspeechend = () => {
       if (stateRef.current === "listening") {
-        setState("processing");
+        updateState("processing");
         setMsg("Processing what you said…");
       }
     };
@@ -90,7 +98,7 @@ export function VoiceSurface({ onUnsupported, compact = false, disabled = false 
       setListening(false); // a final result: the reply (or search result) may be spoken now
       const text = e.results[0][0].transcript;
       setQ(text);
-      setState("idle");
+      updateState("idle");
       setMsg(`Heard “${text}”.`);
       void ask(text);
     };
@@ -98,20 +106,20 @@ export function VoiceSurface({ onUnsupported, compact = false, disabled = false 
       setListening(false);
       const f = recognitionError(e.error, userStopped.current);
       if (!f) return;
-      setState(f.state);
+      updateState(f.state);
       setMsg(f.msg, true);
     };
     r.onend = () => {
       setListening(false);
-      if (!got && (stateRef.current === "listening" || stateRef.current === "processing")) setState("idle");
+      if (!got && (stateRef.current === "listening" || stateRef.current === "processing")) updateState("idle");
     };
     try {
       r.start();
-      setState("listening");
+      updateState("listening");
       setMsg("Listening.");
     } catch {
       setListening(false);
-      setState("error");
+      updateState("error");
       setMsg("Could not start the microphone. Type the product instead.", true);
     }
   };

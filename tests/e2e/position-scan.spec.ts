@@ -62,3 +62,18 @@ test("a completed scan stops the camera and sends 1–3 frames with consent-base
   expect(body!.share_sightings).toBe(false); // contributions not allowed on a fresh device
   expect(await liveTracks(page)).toBe(0);
 });
+
+test("entrance confirmation cannot submit a competing turn during capture", async ({ page }) => {
+  let turns = 0;
+  await page.route("**/api/agent/shopper", (route) => {
+    turns++;
+    return route.fulfill({ json: chosen });
+  });
+  await page.goto("/shopper/guide");
+  await page.getByLabel("Or type a reply").fill("milk");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await page.getByRole("button", { name: "Scan", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Scanning…" })).toBeVisible();
+  await page.getByRole("button", { name: "I'm at the store entrance" }).click({ force: true });
+  expect(turns).toBe(1);
+});
