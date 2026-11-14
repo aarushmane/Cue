@@ -17,6 +17,18 @@ const MAX_W = 768;
 
 const ENTRANCE = DEMO_NODES.find((n) => n.kind === "entrance");
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** iOS (and some Android cameras) report videoWidth 0 for a moment after play() resolves: wait until it's real. */
+async function waitForSize(video: HTMLVideoElement, alive: () => boolean, timeoutMs = 2000): Promise<boolean> {
+  for (let t = 0; t < timeoutMs; t += 50) {
+    if (!alive()) return false;
+    if (video.videoWidth > 0 && video.videoHeight > 0) return true;
+    await sleep(50);
+  }
+  return false;
+}
+
 function grab(video: HTMLVideoElement): string | null {
   const w = video.videoWidth;
   const h = video.videoHeight;
@@ -74,7 +86,8 @@ export function PositionScan() {
     try {
       setPhase("camera");
       s.say("Scanning. Slowly pan your phone left to right.");
-      const media = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+      // `ideal`, not exact: the back camera when there is one, any camera otherwise (no OverconstrainedError).
+      const media = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
       // Left the screen while the permission prompt was open: turn the camera straight back off.
       if (!alive.current) {
         media.getTracks().forEach((t) => t.stop());
@@ -82,13 +95,28 @@ export function PositionScan() {
       }
       stream.current = media;
       const v = video.current!;
+      // iOS plays a camera stream inline without a gesture only when the element is muted and inline. React's
+      // `muted` prop isn't reliably reflected on the element, so set both as properties (and the legacy attribute).
+      v.muted = true;
+      v.playsInline = true;
+      v.setAttribute("playsinline", "");
       v.srcObject = stream.current;
       await v.play();
+      if (!(await waitForSize(v, () => alive.current))) {
+        if (!alive.current) return;
+        throw new Error("camera-not-ready");
+      }
       const frames: string[] = [];
       for (let i = 0; i < FRAMES; i++) {
-        await new Promise((r) => setTimeout(r, i === 0 ? 300 : GAP_MS));
+        await sleep(i === 0 ? 300 : GAP_MS);
         if (!alive.current) return; // unmount already stopped the tracks; capture nothing more, send nothing
-        const f = grab(v);
+        // A frame can still come back empty right after start-up: retry briefly before skipping it.
+        let f = grab(v);
+        for (let tries = 0; !f && tries < 3 && alive.current; tries++) {
+          await sleep(100);
+          f = grab(v);
+        }
+        if (!alive.current) return;
         if (f) frames.push(f);
       }
       stop();
@@ -119,11 +147,16 @@ export function PositionScan() {
     } catch (e) {
       stop();
       if (!alive.current) return; // aborted because the shopper left: nothing to report
-      const denied = e instanceof DOMException && (e.name === "NotAllowedError" || e.name === "SecurityError");
+      const name = e instanceof DOMException ? e.name : e instanceof Error ? e.message : "";
       setPhase("error");
-      const text = denied
-        ? "Camera permission is off. Allow it in browser settings, or say where you are."
-        : "The scan did not work. Try again, or say where you are.";
+      const text =
+        name === "NotAllowedError" || name === "SecurityError"
+          ? "Camera permission is off. Allow it in browser settings, or say where you are."
+          : name === "NotReadableError" // phones: another app (a call, the camera app) is holding the camera
+            ? "Another app is using the camera. Close it and try again, or say where you are."
+            : name === "camera-not-ready"
+              ? "The camera did not start. Try again, or say where you are."
+              : "The scan did not work. Try again, or say where you are.";
       setNote(text);
     }
   };
