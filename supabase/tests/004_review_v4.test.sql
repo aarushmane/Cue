@@ -41,3 +41,16 @@ do $$ begin
   if (select sightings from observations where source = 'shopper') <> 2 then raise exception 'FAIL sightings = 2'; end if;
   raise notice 'ok  sightings counted, no media stored';
 end $$;
+
+-- Mutation functions must not be callable with the anon/authenticated keys (PostgREST RPC).
+do $$ begin
+  if has_function_privilege('anon', 'review_observation(text, text, int, uuid, text, text, jsonb, text, text, text, int, boolean)', 'execute')
+     or has_function_privilege('authenticated', 'move_product_checked(text, text, text, int, uuid, text)', 'execute')
+     or has_function_privilege('anon', 'submit_shopper_observation(text, jsonb, text, text)', 'execute') then
+    raise exception 'FAIL anon/authenticated can execute a server-only function';
+  end if;
+  if not has_function_privilege('service_role', 'review_observation(text, text, int, uuid, text, text, jsonb, text, text, text, int, boolean)', 'execute') then
+    raise exception 'FAIL service_role cannot execute review_observation';
+  end if;
+  raise notice 'ok  server-only functions are not exposed to anon/authenticated';
+end $$;

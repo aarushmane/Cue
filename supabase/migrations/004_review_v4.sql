@@ -155,4 +155,14 @@ begin
   return jsonb_build_object('code', 'OK', 'version', t.version + 1);
 end $$;
 
+-- ───────────────────────────── grants ─────────────────────────────
+-- Server-only (service role, after requireStaff in the route). Supabase exposes public functions over RPC with a
+-- default PUBLIC execute grant, so revoke it, as 003 does for its functions.
+revoke execute on function review_observation(text, text, int, uuid, text, text, jsonb, text, text, text, int, boolean) from public, anon, authenticated;
+revoke execute on function move_product_checked(text, text, text, int, uuid, text) from public, anon, authenticated;
+revoke execute on function submit_shopper_observation(text, jsonb, text, text) from public, anon, authenticated;
+grant execute on function review_observation(text, text, int, uuid, text, text, jsonb, text, text, text, int, boolean) to service_role;
+grant execute on function move_product_checked(text, text, text, int, uuid, text) to service_role;
+grant execute on function submit_shopper_observation(text, jsonb, text, text) to service_role;
+
 commit;
