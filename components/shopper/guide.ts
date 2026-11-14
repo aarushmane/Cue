@@ -69,7 +69,7 @@ export async function postTurn(nav: GuideNav, history: unknown[], turn: GuideTur
     r = await fetch("/api/agent/shopper", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ nav, history, ...turn }),
+      body: JSON.stringify({ nav, history: trimForSend(history), ...turn }),
       signal,
     });
   } catch {
@@ -79,4 +79,36 @@ export async function postTurn(nav: GuideNav, history: unknown[], turn: GuideTur
   if (r.status === 503) return { ok: false, offline: true, say: body.say ?? "The voice assistant is offline." };
   if (!r.ok || !body.nav) return { ok: false, offline: false, say: body.say ?? "Sorry, something went wrong. Please try again." };
   return { ok: true, reply: body as GuideReply };
+}
+
+/**
+ * Position to keep when a new conversation starts ("New search", "Get directions"): the shopper is still where the
+ * last scan or guided step put them. A CONFIRMED fix is downgraded to LIKELY, since they may have moved since.
+ */
+export function carryPosition(nav: GuideNav): Pick<GuideNav, "current_node_id" | "position_confidence"> | Record<string, never> {
+  const conf = nav.position_confidence ?? "UNKNOWN";
+  if (!nav.current_node_id || conf === "UNKNOWN") return {};
+  return { current_node_id: nav.current_node_id, position_confidence: "LIKELY" };
+}
+
+/** The route accepts at most 80 history entries; stay well under it. */
+export const MAX_SEND_HISTORY = 60;
+
+/** A plain user text turn (Anthropic `{role:"user", content: string}` or Gemini `{role:"user", parts:[{text}]}`). */
+function isPlainUserTurn(m: unknown): boolean {
+  if (!m || typeof m !== "object") return false;
+  const x = m as { role?: unknown; content?: unknown; parts?: unknown };
+  if (x.role !== "user") return false;
+  if (typeof x.content === "string") return true;
+  return Array.isArray(x.parts) && x.parts.length > 0 && x.parts.every((p) => !!p && typeof (p as { text?: unknown }).text === "string" && Object.keys(p as object).length === 1);
+}
+
+/**
+ * Bound the history the client sends. Cuts only at a plain user text turn, so a tool call is never separated from
+ * its result (same rule as the server's trimHistory). With no safe cut point, start fresh: `nav` carries the state.
+ */
+export function trimForSend(history: unknown[], max = MAX_SEND_HISTORY): unknown[] {
+  if (history.length <= max) return history;
+  for (let i = history.length - max; i < history.length; i++) if (isPlainUserTurn(history[i])) return history.slice(i);
+  return [];
 }

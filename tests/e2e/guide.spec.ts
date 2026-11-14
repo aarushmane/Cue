@@ -70,3 +70,47 @@ test("a reply that arrives after New search is dropped", async ({ page }) => {
   // The shell's live region persists across client navigation: the late reply must not be announced.
   await expect(page.getByRole("status").filter({ hasText: "Late reply." })).toHaveCount(0);
 });
+
+test("a known position survives New search, and Get directions reuses it", async ({ page }) => {
+  const bodies: { nav: { current_node_id?: string; position_confidence?: string; state?: string } }[] = [];
+  await page.route("**/api/agent/shopper", async (route) => {
+    bodies.push(route.request().postDataJSON());
+    const nav = bodies.length === 1
+      ? { ...base, state: "GUIDING", product_id: "P06", current_node_id: "N03", position_confidence: "CONFIRMED" }
+      : { ...base, state: "GUIDING", product_id: "P01", current_node_id: "N03", position_confidence: "LIKELY" };
+    await route.fulfill({ json: { say: "Walk forward.", agent_text: "ok", route_text: ["Walk forward."], choices: [], ui_state: "GUIDING", nav, history: [] } });
+  });
+  await page.goto("/shopper/guide");
+  await page.getByLabel("Or type a reply").fill("almond milk");
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeVisible();
+
+  // New conversation, same place: everything below is client-side navigation (no reload).
+  await page.getByRole("button", { name: "‹ New search" }).click();
+  await expect(page.getByText("Your location: Found")).toBeVisible();
+  await page.getByLabel("Type a product").fill("bananas");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(page).toHaveURL(/\/shopper\/(destination|results)$/);
+  if (page.url().endsWith("/results")) await page.getByRole("button", { name: /Bananas/ }).first().click();
+  await page.getByRole("button", { name: "Get directions" }).click();
+  await expect(page).toHaveURL(/\/shopper\/guide$/);
+
+  expect(bodies[1].nav.current_node_id).toBe("N03");
+  expect(bodies[1].nav.position_confidence).toBe("LIKELY"); // CONFIRMED is downgraded after a reset
+  await expect(page.getByRole("heading", { name: "Find my position" })).toHaveCount(0);
+});
+
+test("Get directions failure stays on the destination screen", async ({ page }) => {
+  await page.route("**/api/agent/shopper", (route) =>
+    route.fulfill({ status: 502, json: { error: "AGENT_ERROR", say: "Sorry, something went wrong. Please try again, or use the buttons." } }),
+  );
+  await page.goto("/shopper");
+  await page.getByLabel("Type a product").fill("bananas");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(page).toHaveURL(/\/shopper\/(destination|results)$/);
+  if (page.url().endsWith("/results")) await page.getByRole("button", { name: /Bananas/ }).first().click();
+  await page.getByRole("button", { name: "Get directions" }).click();
+  await expect(page.locator("main").getByText("Sorry, something went wrong.")).toBeVisible();
+  await expect(page).toHaveURL(/\/shopper\/destination$/);
+  await expect(page.getByRole("button", { name: "Get directions" })).toBeVisible(); // can retry
+});

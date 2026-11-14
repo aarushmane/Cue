@@ -92,16 +92,19 @@ export default function DestinationPage() {
         <button
           type="button"
           aria-disabled={s.guide.busy || undefined}
-          onClick={() => {
+          onClick={async () => {
             if (s.guide.busy) return;
-            s.resetGuide();
-            void s.ask(`Take me to ${[p.brand, p.name, p.size].filter(Boolean).join(" ")}`);
+            s.resetGuide(); // keeps a known position, so a shopper who already scanned isn't asked to scan again
+            const r = await s.sendTurn({ utterance: `Take me to ${[p.brand, p.name, p.size].filter(Boolean).join(" ")}` });
+            // On failure stay here: the error is spoken, and the shelf location above still works.
+            if (r === "ok") router.push("/shopper/guide");
           }}
           className={`${sBtn.primary} px-4 text-[1.15em]`}
         >
           {s.guide.busy ? "Starting directions…" : "Get directions"}
         </button>
       )}
+      {s.guide.error && !s.guide.busy && <p className="m-0 text-[1em] font-semibold text-(--s-err)">{s.guide.error}</p>}
       <button type="button" onClick={() => s.aux("/shopper/help")} className={`${sBtn.secondary} px-4 text-[1.15em]`}>Get Help</button>
     </>
   );

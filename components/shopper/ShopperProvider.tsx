@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AISLE_NAMES, DEMO_STORE } from "@/lib/seed/demo-store";
 import type { PublishedProduct } from "@/lib/types";
-import { postTurn, prefsPatch, toNavPrefs, type GuideNav, type GuideReply, type GuideTurn } from "./guide";
+import { carryPosition, postTurn, prefsPatch, toNavPrefs, type GuideNav, type GuideReply, type GuideTurn } from "./guide";
 
 export type Contrast = "comfortable" | "dark" | "light";
 export type Contribution = "allowed" | "declined" | null;
@@ -65,8 +65,9 @@ interface ShopperCtx {
   guide: GuideView;
   /** Voice entry point: sends the utterance to the agent; falls back to plain search when the agent is offline. */
   ask: (text: string) => Promise<void>;
-  /** One agent turn (utterance and/or scan result). */
-  sendTurn: (turn: GuideTurn) => Promise<TurnResult>;
+  /** One agent turn (utterance and/or scan result). `speakErrors: false` shows an error without speaking it. */
+  sendTurn: (turn: GuideTurn, opts?: { speakErrors?: boolean }) => Promise<TurnResult>;
+  /** Start a new conversation. Keeps a known position (downgraded to LIKELY) so the shopper needn't scan again. */
   resetGuide: () => void;
 }
 
@@ -239,7 +240,7 @@ export function ShopperProvider({ children }: { children: ReactNode }) {
   }, [selected]);
 
   const sendTurn = useCallback(
-    async (turn: GuideTurn): Promise<TurnResult> => {
+    async (turn: GuideTurn, opts: { speakErrors?: boolean } = {}): Promise<TurnResult> => {
       const g = guideRef.current;
       if (g.busy) return "busy";
       g.busy = true;
@@ -254,7 +255,7 @@ export function ShopperProvider({ children }: { children: ReactNode }) {
       if (!res.ok) {
         if (res.offline) g.online = false;
         setGuide((v) => ({ ...v, busy: false, online: res.offline ? false : v.online, error: res.say }));
-        if (!res.offline) say(res.say);
+        if (!res.offline && opts.speakErrors !== false) say(res.say);
         return "failed";
       }
       const reply: GuideReply = res.reply;
@@ -283,7 +284,9 @@ export function ShopperProvider({ children }: { children: ReactNode }) {
       // A function, not a narrowed property read: sendTurn changes `online` while we await it.
       const offline = () => guideRef.current.online === false;
       if (!offline()) {
-        const r = await sendTurn({ utterance });
+        // Off the guide screen a failure falls back to plain search below, which speaks its own result: don't speak the
+        // agent's error first (it would be cut off mid-sentence).
+        const r = await sendTurn({ utterance }, { speakErrors: pathRef.current === "/shopper/guide" });
         if (r === "ok") {
           if (pathRef.current !== "/shopper/guide") router.push("/shopper/guide");
           return;
@@ -304,9 +307,10 @@ export function ShopperProvider({ children }: { children: ReactNode }) {
   );
 
   const resetGuide = useCallback(() => {
-    const online = guideRef.current.online;
-    guideRef.current = { nav: { store_id: STORE_ID }, history: [], busy: false, online };
-    setGuide({ ...freshGuide(), online });
+    const { online, nav: old } = guideRef.current;
+    const nav: GuideNav = { store_id: STORE_ID, ...carryPosition(old) };
+    guideRef.current = { nav, history: [], busy: false, online };
+    setGuide({ ...freshGuide(), online, nav });
   }, []);
 
   const aux = useCallback(

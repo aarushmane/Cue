@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { isGuiding, nearestRate, needsPosition, postTurn, prefsPatch, toNavPrefs } from "@/components/shopper/guide";
+import { carryPosition, isGuiding, MAX_SEND_HISTORY, nearestRate, needsPosition, postTurn, prefsPatch, toNavPrefs, trimForSend } from "@/components/shopper/guide";
 
 describe("shopper agent client helpers", () => {
   it("maps settings to agent prefs", () => {
@@ -55,5 +55,50 @@ describe("postTurn", () => {
     vi.stubGlobal("fetch", vi.fn(async () => { throw new TypeError("network"); }));
     const r = await postTurn({ store_id: "s" }, [], { utterance: "milk" });
     expect(r.ok).toBe(false);
+  });
+});
+
+describe("carryPosition", () => {
+  it("keeps a known position as LIKELY", () => {
+    expect(carryPosition({ store_id: "s", current_node_id: "N04", position_confidence: "CONFIRMED" })).toEqual({ current_node_id: "N04", position_confidence: "LIKELY" });
+    expect(carryPosition({ store_id: "s", current_node_id: "N04", position_confidence: "LIKELY" })).toEqual({ current_node_id: "N04", position_confidence: "LIKELY" });
+  });
+  it("drops an unknown position", () => {
+    expect(carryPosition({ store_id: "s", current_node_id: "N04", position_confidence: "UNKNOWN" })).toEqual({});
+    expect(carryPosition({ store_id: "s", position_confidence: "CONFIRMED" })).toEqual({});
+  });
+});
+
+describe("trimForSend", () => {
+  const user = (t: string) => ({ role: "user", content: t });
+  const toolUse = { role: "assistant", content: [{ type: "tool_use", id: "x", name: "search_products", input: {} }] };
+  const toolResult = { role: "user", content: [{ type: "tool_result", tool_use_id: "x", content: "{}" }] };
+
+  it("leaves short histories alone", () => {
+    const h = [user("a"), toolUse, toolResult];
+    expect(trimForSend(h)).toBe(h);
+  });
+
+  it("cuts at a plain user turn, never between a tool call and its result (Anthropic shape)", () => {
+    const turn = (i: number) => [user(`q${i}`), toolUse, toolResult, { role: "assistant", content: `a${i}` }];
+    const h = Array.from({ length: 30 }, (_, i) => turn(i)).flat(); // 120 entries
+    const out = trimForSend(h);
+    expect(out.length).toBeLessThanOrEqual(MAX_SEND_HISTORY);
+    expect(out[0]).toEqual(expect.objectContaining({ role: "user", content: expect.any(String) }));
+    expect(out.at(-1)).toBe(h.at(-1));
+  });
+
+  it("recognizes Gemini plain user turns and skips function responses", () => {
+    const gUser = (t: string) => ({ role: "user", parts: [{ text: t }] });
+    const gCall = { role: "model", parts: [{ functionCall: { name: "next_step", args: {} } }] };
+    const gResp = { role: "user", parts: [{ functionResponse: { name: "next_step", response: {} } }] };
+    const h = Array.from({ length: 25 }, (_, i) => [gUser(`q${i}`), gCall, gResp]).flat(); // 75 entries
+    const out = trimForSend(h, 10);
+    expect(out.length).toBeLessThanOrEqual(10);
+    expect(out[0]).toEqual(expect.objectContaining({ parts: [{ text: expect.any(String) }] }));
+  });
+
+  it("starts fresh when there is no safe cut point", () => {
+    expect(trimForSend(Array(70).fill(toolResult))).toEqual([]);
   });
 });
