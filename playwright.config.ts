@@ -17,6 +17,8 @@ export default defineConfig({
     ...devices["Desktop Chrome"],
     // Set PW_CHANNEL=chrome to use an installed Google Chrome instead of Playwright's bundled browser.
     channel: process.env.PW_CHANNEL || undefined,
+    // Or PW_CHROMIUM_PATH=/path/to/chromium for a browser build other than the one this Playwright version bundles.
+    ...(process.env.PW_CHROMIUM_PATH ? { launchOptions: { executablePath: process.env.PW_CHROMIUM_PATH } } : {}),
     viewport: { width: 390, height: 844 },
     hasTouch: true,
     trace: "retain-on-failure",

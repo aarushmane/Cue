@@ -128,13 +128,19 @@ export function OnboardScreen() {
   // Leaving the screen closes the stream, which stops the run on the server.
   useEffect(() => () => abortRef.current?.abort(), []);
 
-  // A refusal that needs the passcode reveals the field and moves focus to it.
+  // A refusal that needs the passcode reveals the field and moves focus to it once it has rendered.
+  const [focusPass, setFocusPass] = useState(0);
+  useEffect(() => {
+    if (focusPass) passRef.current?.focus();
+  }, [focusPass]);
   const refused = (error: string, code?: string) => {
     setError(error);
     if (code === "PASSCODE") {
       setNeedPasscode(true);
-      requestAnimationFrame(() => passRef.current?.focus());
+      setFocusPass((n) => n + 1);
+      return true;
     }
+    return false;
   };
 
   const run = async () => {
@@ -151,6 +157,7 @@ export function OnboardScreen() {
     setLive(true);
     setAnnouncement("");
     todosRef.current = [];
+    let toPasscode = false;
     try {
       const out = await streamOnboarding(
         { costar_property_id: id, store_id: storeId, ...(passcode ? { passcode } : {}) },
@@ -170,14 +177,14 @@ export function OnboardScreen() {
         },
       );
       if (out.kind === "result") setResult(out.result);
-      else if (out.kind === "error") refused(out.error, out.code);
+      else if (out.kind === "error") toPasscode = refused(out.error, out.code);
       else {
         // No stream (e.g. an older server): the Server Function still works, just without live progress.
         setLive(false);
         setNow("");
         const r = await runOnboardingDemo(id, storeId, passcode || undefined);
         if (r.ok) setResult(r.result);
-        else refused(r.error, r.code);
+        else toPasscode = refused(r.error, r.code);
       }
     } catch {
       if (ac.signal.aborted) return; // unmounted
@@ -186,7 +193,7 @@ export function OnboardScreen() {
       if (!ac.signal.aborted) {
         setBusy(false);
         setNow("");
-        status.current?.focus();
+        if (!toPasscode) status.current?.focus();
       }
     }
   };
