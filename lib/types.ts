@@ -1,6 +1,8 @@
 // Shared domain types. These mirror docs/contracts.md — change both together.
 
-export type NodeKind = "entrance" | "junction" | "aisle_marker" | "shelf_approach" | "service";
+export type NodeKind = "entrance" | "junction" | "aisle_marker" | "shelf_approach" | "service" | "outdoor";
+
+export type NodeSource = "manual" | "matterport" | "vexcel";
 
 export interface MapNode {
   id: string;
@@ -9,7 +11,28 @@ export interface MapNode {
   kind: NodeKind;
   label: string; // spoken name, e.g. "the Aisle 2 end sign"
   facingDeg?: number | null; // compass-free heading on the plan (0 = up/north on image), used only when known
+  source?: NodeSource; // default "manual"
+  sweepId?: string | null; // Matterport sweep this node was imported from
 }
+
+export type ConfidenceState = "CONFIRMED" | "LIKELY" | "UNKNOWN";
+
+export interface LocalizeResult {
+  confidence_state: ConfidenceState;
+  selected_node_id: string | null;
+  candidate_node_ids: string[];
+  landmark_id: string | null;
+  evidence: string;
+}
+
+export type NavigationState =
+  | "SEARCHING"
+  | "DESTINATION_SELECTED"
+  | "LOCATING"
+  | "ROUTING"
+  | "GUIDING"
+  | "ARRIVED"
+  | "NEEDS_HELP";
 
 export interface MapEdge {
   id: string;
@@ -49,7 +72,7 @@ export interface Product {
   variant: string | null;
   size: string | null;
   aliases: string[];
-  /** Staff-facing category, e.g. "Dairy alternatives". Optional so older rows stay valid. */
+  /** Product type / staff-facing category, e.g. "plant-based milk". Optional so older rows stay valid. */
   category?: string | null;
   /** Optimistic-concurrency version, bumped on every staff edit or move. */
   version?: number;
@@ -64,6 +87,8 @@ export interface ProductLocation {
   verifiedAt: string; // ISO timestamp
   /** Display label of whoever verified this location (staff only; never shopper data). */
   verifiedBy?: string | null;
+  lastSeenAt?: string | null; // last time a shopper's camera saw it at this location
+  missCount?: number; // consecutive scans that looked at this shelf without seeing it
 }
 
 /** A product joined with its current published location. Only these are visible to shoppers. */
@@ -178,7 +203,7 @@ export interface AuditEvent {
 // ───────────────────────────── Floor plan editor ─────────────────────────────
 
 /** Editor node kinds. "walk" is a walk point drawn by staff; it is stored as a `junction` in StoreGraph. */
-export type PlanNodeKind = "entrance" | "service" | "walk" | "junction" | "shelf_approach" | "aisle_marker";
+export type PlanNodeKind = "entrance" | "service" | "walk" | "junction" | "shelf_approach" | "aisle_marker" | "outdoor";
 
 /** Floor plan in the editor's format. All coordinates are normalized 0..1, origin top-left. */
 export interface FloorPlan {

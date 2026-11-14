@@ -13,7 +13,7 @@ export interface Check {
 
 export const KIND_TXT: Record<string, string> = {
   entrance: "Entrance", service: "Help desk", junction: "Walk point", walk: "Walk point",
-  shelf_approach: "Shelf approach point", aisle_marker: "Aisle marker",
+  shelf_approach: "Shelf approach point", aisle_marker: "Aisle marker", outdoor: "Outdoor approach point",
 };
 
 export const regionOf = (m: FloorPlan, shelfId: string) => m.shelves.find((s) => s.id === shelfId);

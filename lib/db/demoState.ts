@@ -25,7 +25,7 @@ function seedProducts(): PublishedProduct[] {
   return DEMO_PRODUCTS.flatMap((p) => {
     const location = DEMO_LOCATIONS.find((l) => l.productId === p.id);
     const shelf = location && shelves.get(location.shelfId);
-    return location && shelf ? [{ ...p, aliases: [...p.aliases], location: { ...location }, shelf: { id: shelf.id, aisle: shelf.aisle, section: shelf.section } }] : [];
+    return location && shelf ? [{ ...p, aliases: [...p.aliases], location: { ...location, lastSeenAt: null, missCount: 0 }, shelf: { id: shelf.id, aisle: shelf.aisle, section: shelf.section } }] : [];
   });
 }
 

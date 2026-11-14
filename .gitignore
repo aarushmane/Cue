@@ -44,3 +44,7 @@ next-env.d.ts
 # playwright
 /test-results/
 /playwright-report/
+
+# Hackathon data (CoStar track): hackathon use only, never commit
+/data/models_index.csv
+/data/costar-kit/
