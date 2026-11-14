@@ -9,9 +9,14 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test",
+    "test:e2e": "playwright test && playwright test -c playwright.auth.config.ts",
+    "test:e2e:memory": "playwright test",
+    "test:e2e:auth": "playwright test -c playwright.auth.config.ts",
     "typecheck": "tsc --noEmit",
-    "seed:sql": "node scripts/gen-seed.mts"
+    "seed:sql": "node scripts/gen-seed.mts",
+    "eval:localize": "node --env-file-if-exists=.env.local scripts/eval-localize.mts",
+    "check:costar": "node --env-file-if-exists=.env.local scripts/check-costar.mts",
+    "test:db": "bash scripts/test-db.sh"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.8.0",

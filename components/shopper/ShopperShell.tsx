@@ -11,6 +11,7 @@ const STEP: Record<string, string> = {
   "/shopper": "Step 1 of 5 · Search",
   "/shopper/results": "Step 2 of 5 · Choose product",
   "/shopper/destination": "Step 2 of 5 · Destination",
+  "/shopper/guide": "Assistant",
   "/shopper/help": "Help",
   "/shopper/settings": "Preferences",
   "/shopper/consent": "Product contributions",

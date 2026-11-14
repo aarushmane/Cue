@@ -1,6 +1,7 @@
 "use client";
 // Shopper search home (Home A: centered voice surface).
 import { useEffect, useRef } from "react";
+import { locationText } from "@/components/shopper/guide";
 import { useShopper } from "@/components/shopper/ShopperProvider";
 import { sBtn } from "@/components/shopper/ShopperShell";
 import { VoiceSurface } from "@/components/shopper/VoiceSurface";
@@ -35,7 +36,7 @@ export default function ShopperHome() {
         <span aria-hidden="true" className="flex size-[26px] items-center justify-center rounded-full border-2 border-dashed border-(--s-text) text-[0.85em]">
           ?
         </span>
-        Your location: Unknown
+        Your location: {locationText(s.guide.nav) ?? "Unknown"}
       </p>
       <div className="flex flex-col gap-[0.35em]">
         <h1 className="m-0 text-[2em] leading-[1.12] font-extrabold text-(--s-primary-text)">What can I help you find?</h1>

@@ -4,7 +4,6 @@
 // to Activity.
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { getStaffSnapshotDemo } from "@/lib/demo/adapter";
 import { listSightingsDemo, reviewSightingDemo, type SightingsSnapshot } from "@/lib/demo/sightings";
 import { LEVELS } from "@/lib/review/format";
 import { useStaff, withSnap } from "@/components/business/StaffProvider";
@@ -92,7 +91,7 @@ function SightingCard({ s, busy, onReview }: { s: Suggestion; busy: boolean; onR
 function SightingsPage() {
   const router = useRouter();
   const st = useStaff();
-  const { apply, toast } = st;
+  const { refresh, toast } = st;
   const [data, setData] = useState<SightingsSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -132,8 +131,7 @@ function SightingsPage() {
     setData(r.sightings);
     toast(r.message);
     // Keep Home, Inventory and Activity in step with the change.
-    const snap = await getStaffSnapshotDemo();
-    if (snap.ok) apply(snap);
+    await refresh();
   }
 
   return (

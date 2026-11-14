@@ -55,11 +55,11 @@ insert into shelves (id, map_id, aisle, section, anchor_node, x, y, w, h) values
   ('S-A4-2', 'map-demo-v1', '4', '2', 'N16', 0.8049999999999999, 0.38, 0.07, 0.19),
   ('S-A4-3', 'map-demo-v1', '4', '3', 'N17', 0.8049999999999999, 0.17500000000000002, 0.07, 0.19);
 insert into landmarks (id, node_id, image_url, description) values
-  ('L01', 'N01', '/demo/landmarks/L01.jpg', 'Entrance doors with a green STOREGUIDE welcome sign'),
-  ('L02', 'N02', '/demo/landmarks/L02.jpg', 'Hanging sign reading AISLE 1 – PRODUCE & BAKERY (red)'),
-  ('L03', 'N03', '/demo/landmarks/L03.jpg', 'Hanging sign reading AISLE 2 – DAIRY (blue)'),
-  ('L04', 'N04', '/demo/landmarks/L04.jpg', 'Hanging sign reading AISLE 3 – PANTRY (yellow)'),
-  ('L05', 'N05', '/demo/landmarks/L05.jpg', 'Help desk counter with a bell and a HELP sign');
+  ('L01', 'N01', '/demo/landmarks/L01.jpg', 'GREEN rectangular banner on the entrance doors reading "WELCOME TO STOREGUIDE" in white capitals, with a shopping-cart icon. The only green sign.'),
+  ('L02', 'N02', '/demo/landmarks/L02.jpg', 'RED SQUARE sign with a huge white number 1 and the words "PRODUCE & BAKERY", apple icon. The only red sign and the only square one.'),
+  ('L03', 'N03', '/demo/landmarks/L03.jpg', 'BLUE ROUND sign with a huge white number 2 and the word "DAIRY", milk-carton icon. The only round sign.'),
+  ('L04', 'N04', '/demo/landmarks/L04.jpg', 'YELLOW TRIANGLE sign, point up, with a huge black number 3 and the word "PANTRY", tin-can icon. The only triangular sign.'),
+  ('L05', 'N05', '/demo/landmarks/L05.jpg', 'ORANGE sign reading "HELP" with a question-mark icon, standing on a counter next to a silver call bell. The only orange sign.');
 insert into products (id, store_id, name, brand, variant, size, aliases) values
   ('P01', 'demo-store', 'Bananas', null, null, 'per bunch', array['banana']::text[]),
   ('P02', 'demo-store', 'Gala Apples', null, null, '3 lb bag', array['apples', 'apple']::text[]),

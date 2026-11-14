@@ -1,12 +1,11 @@
 "use client";
 // Voice surface: a single full-width <button> (no other controls inside). Recording only starts on a tap,
-// announces "Listening." and 'Heard "…".', then runs the normal search. States: idle, listening, processing,
+// announces "Listening." and 'Heard "…".', then asks the shopper agent (plain search when the agent is offline). States: idle, listening, processing,
 // error, denied, unsupported. The status line below is referenced by aria-describedby.
 import { useEffect, useRef, useState } from "react";
 import { Mic } from "lucide-react";
 import { useShopper } from "./ShopperProvider";
-
-type MicState = "idle" | "listening" | "processing" | "error" | "denied" | "unsupported";
+import { recognitionError, setListening, type MicState } from "./speech";
 
 const MIC: Record<MicState, { label: string; sub: string; aria: string }> = {
   idle: { label: "Tap anywhere here to speak", sub: "Voice search. You can also type below.", aria: "Tap anywhere here to speak. Starts voice search" },
@@ -32,37 +31,56 @@ interface Rec {
 }
 type RecCtor = new () => Rec;
 
-export function VoiceSurface({ onUnsupported }: { onUnsupported: () => void }) {
-  const { t, setMsg, setQ, runSearch } = useShopper();
+function detach(r: Rec | null) {
+  if (!r) return;
+  r.onspeechend = r.onresult = r.onerror = r.onend = null;
+  try { r.abort(); } catch {}
+}
+
+export function VoiceSurface({ onUnsupported, compact = false, disabled = false }: { onUnsupported: () => void; compact?: boolean; disabled?: boolean }) {
+  const { t, setMsg, setQ, ask } = useShopper();
   const [state, setState] = useState<MicState>("idle");
   const rec = useRef<Rec | null>(null);
+  // Set when the shopper taps to stop, so the "aborted" error some browsers then fire stays silent.
+  const userStopped = useRef(false);
   const stateRef = useRef(state);
-  useEffect(() => {
-    stateRef.current = state;
-  }, [state]);
-  useEffect(() => () => rec.current?.abort(), []);
+  const updateState = (next: MicState) => {
+    stateRef.current = next;
+    setState(next);
+  };
+  useEffect(
+    () => () => {
+      detach(rec.current);
+      setListening(false);
+    },
+    [],
+  );
 
   const toggle = () => {
     if (state === "listening") {
+      userStopped.current = true;
       try {
         rec.current?.stop();
       } catch {}
-      setState("idle");
+      setListening(false);
+      updateState("idle");
       setMsg("Stopped listening.");
       return;
     }
-    if (state === "processing") return;
+    if (state === "processing" || disabled) return;
     const w = window as unknown as { SpeechRecognition?: RecCtor; webkitSpeechRecognition?: RecCtor };
     const SR = w.SpeechRecognition || w.webkitSpeechRecognition;
     if (!SR) {
-      setState("unsupported");
+      updateState("unsupported");
       setMsg("Voice input is not available in this browser. Type the product instead.", true);
       onUnsupported();
       return;
     }
-    try {
-      window.speechSynthesis?.cancel();
-    } catch {}
+    // Stop any speech output first and keep it off while listening (no echo). This stays synchronous: iOS only
+    // allows recognition.start() inside the tap itself, so nothing here may await or use a timer.
+    detach(rec.current);
+    setListening(true);
+    userStopped.current = false;
     const r = new SR();
     rec.current = r;
     r.lang = "en-US";
@@ -71,39 +89,37 @@ export function VoiceSurface({ onUnsupported }: { onUnsupported: () => void }) {
     let got = false;
     r.onspeechend = () => {
       if (stateRef.current === "listening") {
-        setState("processing");
+        updateState("processing");
         setMsg("Processing what you said…");
       }
     };
     r.onresult = (e) => {
       got = true;
+      setListening(false); // a final result: the reply (or search result) may be spoken now
       const text = e.results[0][0].transcript;
       setQ(text);
-      setState("idle");
+      updateState("idle");
       setMsg(`Heard “${text}”.`);
-      void runSearch(text);
+      void ask(text);
     };
     r.onerror = (e) => {
-      if (e.error === "not-allowed" || e.error === "service-not-allowed") {
-        setState("denied");
-        setMsg("Microphone permission is off. Allow it in your browser settings, or type the product.", true);
-      } else if (e.error === "no-speech") {
-        setState("error");
-        setMsg("I did not hear anything. Tap to try again.", true);
-      } else {
-        setState("error");
-        setMsg(`Voice input stopped (${e.error}). Tap to try again, or type.`, true);
-      }
+      setListening(false);
+      const f = recognitionError(e.error, userStopped.current);
+      if (!f) return;
+      updateState(f.state);
+      setMsg(f.msg, true);
     };
     r.onend = () => {
-      if (!got && (stateRef.current === "listening" || stateRef.current === "processing")) setState("idle");
+      setListening(false);
+      if (!got && (stateRef.current === "listening" || stateRef.current === "processing")) updateState("idle");
     };
     try {
       r.start();
-      setState("listening");
+      updateState("listening");
       setMsg("Listening.");
     } catch {
-      setState("error");
+      setListening(false);
+      updateState("error");
       setMsg("Could not start the microphone. Type the product instead.", true);
     }
   };
@@ -118,7 +134,8 @@ export function VoiceSurface({ onUnsupported }: { onUnsupported: () => void }) {
       aria-pressed={state === "listening"}
       aria-label={m.aria}
       aria-describedby="mic-status"
-      className="flex min-h-[340px] w-full flex-col items-center justify-center gap-4 rounded-[40px] border-4 px-5 py-7"
+      aria-disabled={disabled || undefined}
+      className={`flex ${compact ? "min-h-[180px]" : "min-h-[340px]"} w-full flex-col items-center justify-center gap-4 rounded-[40px] border-4 px-5 py-7`}
       style={{
         background: active ? t.text : bad ? t.surface : t.primary,
         color: active ? t.bg : bad ? t.text : t.onPrimary,

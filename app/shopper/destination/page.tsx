@@ -6,6 +6,7 @@ import { AISLE_NAMES } from "@/lib/seed/demo-store";
 import { destinationSpeech, locKey, locText, useShopper } from "@/components/shopper/ShopperProvider";
 import { sBtn } from "@/components/shopper/ShopperShell";
 import { useFocusOnMount } from "@/components/shopper/useFocusOnMount";
+import { OfflineDirections } from "@/components/shopper/OfflineDirections";
 
 export default function DestinationPage() {
   const s = useShopper();
@@ -83,10 +84,26 @@ export default function DestinationPage() {
       >
         Hear location
       </button>
-      <div className="rounded-[24px] border-[3px] border-dashed border-(--s-border) px-[1.1em] py-[1em] text-[1em]">
-        <strong className="block text-[1.05em]">Guided scan and directions: Phase 3</strong>
-        Camera location scan and step-by-step directions are not built yet. Until then, ask staff for help or hear the shelf location above.
-      </div>
+      {s.guide.online === false ? (
+        <OfflineDirections key={p.id} productId={p.id} />
+      ) : (
+        <button
+          type="button"
+          aria-disabled={s.guide.busy || undefined}
+          onClick={async () => {
+            if (s.guide.busy) return;
+            s.resetGuide(); // keeps a known position, so a shopper who already scanned isn't asked to scan again
+            // announce: false: on success we go to the guide screen, which announces the reply by focusing it.
+            const r = await s.sendTurn({ utterance: `Take me to ${[p.brand, p.name, p.size].filter(Boolean).join(" ")}` }, { announce: false });
+            // On failure stay here: the error is spoken, and the shelf location above still works.
+            if (r === "ok") router.push("/shopper/guide");
+          }}
+          className={`${sBtn.primary} px-4 text-[1.15em]`}
+        >
+          {s.guide.busy ? "Starting directions…" : "Get directions"}
+        </button>
+      )}
+      {s.guide.error && !s.guide.busy && <p className="m-0 text-[1em] font-semibold text-(--s-err)">{s.guide.error}</p>}
       <button type="button" onClick={() => s.aux("/shopper/help")} className={`${sBtn.secondary} px-4 text-[1.15em]`}>Get Help</button>
     </>
   );

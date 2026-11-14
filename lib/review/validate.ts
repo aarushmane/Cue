@@ -40,8 +40,9 @@ export function validate(
     {
       k: "shelf", ok: inAisle && (LEVELS as string[]).includes(d.level), label: "Exact aisle, shelf section and level selected",
       fix: !d.aisle
-        ? "The location is unknown or approximate. Select an exact aisle and shelf from the store map, or request a rescan."
-        : !inAisle ? "Select a shelf section in this aisle." : "Select the shelf level.",
+        ? "No shelf chosen yet. The location is unknown or approximate. Select an exact aisle and shelf from the store map, or request a rescan."
+        : !d.shelf ? `No shelf chosen yet. Select a shelf section in Aisle ${d.aisle}.`
+        : !inAisle ? `Shelf ${d.shelf} is not in Aisle ${d.aisle}. Select a shelf section in this aisle.` : "Select the shelf level.",
     },
     { k: "loc", ok: !!d.locOk, label: "Exact shelf location verified", fix: "Check “I have verified the exact shelf location.”" },
     {

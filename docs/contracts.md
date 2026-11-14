@@ -104,22 +104,54 @@ Multipart `store_id`, `shelf_id`, and `file`. Returns `{ media_id, url }`. Video
   observation `version` matches (409) → re-run `validate()` for publish (422 with failing labels) → merge target
   `version` matches (409) → one transaction.
 
-Until this route exists, the UI calls the in-memory demo adapter in `lib/demo/adapter.ts`
-(`reviewObservationDemo`), which implements this order against `lib/db/demoState.ts` and is labelled
-"Demo action" on screen. The database change it needs is drafted, **not applied**, in
-`docs/proposals/002_needs_rescan.sql`.
+**Built** (`app/api/observations/[id]/review/route.ts`, `lib/staff/service.ts`). Body:
+`{ action: "publish"|"accept"|"edit"|"reject"|"rescan", obs_version, draft?: ReviewDraft, target_version?, reason? }`.
+Success (both modes): `{ observation_id, status, product_id: string|null, is_new: boolean }`. Errors: `{ code, error, failing? }`.
+A merge (`draft.match` = a product id) without a target version is a 409 `TARGET_CONFLICT`.
+Supabase mode calls `review_observation()` from `supabase/migrations/004_review_v4.sql` (one transaction; the server
+runs the same `validate()` checklist as memory mode first, built from the observation row, the published products and
+the published map, with the same 422 `failing` labels; the DB also enforces shelf, level and same-store rules). Memory mode runs `lib/db/demoState.ts` with the
+seeded staff member. The manager screens call it through `staffFetch` (`lib/staff/client.ts`) and re-read the
+snapshot afterwards, since the route doesn't return one.
 
-### `PATCH /api/products/:id/location` (staff)
-`{ shelf_id, level }` → `{ location }`. Uses the `move_product` SQL function. Requests without staff auth get 401 or 403 (test P01).
+### `PATCH /api/products/:id/location` (staff) — built
+`{ shelf_id, level, expected_version? }` → `{ location: { product_id, shelf_id, level }, version }` (both modes). 422 if the shelf is not on the store's published map. Supabase: `move_product_checked()` (version check +
+`move_product` in one transaction; 409 on a stale version). Requests without staff auth get 401 or 403 (test P01).
 
-### `PUT /api/maps/:id/graph` (staff)
-`{ nodes: MapNode[], edges: MapEdge[], shelves: Shelf[] }`. Only drafts can be edited. Publishing creates a new version and marks the old one `SUPERSEDED`.
+**Staff auth for these routes.** Supabase mode: `Authorization: Bearer <access token>` (sent by `staffFetch` after
+staff sign-in) and a `store_staff` row for the resource's store. Memory mode (no sign-in exists): `Bearer
+$STAFF_DEMO_TOKEN`, or no `Authorization` header from a same-origin browser page (the manager app itself; the same
+cross-site protection Next gives Server Functions). Anything else is 401.
+
+### `PUT /api/maps/:id/graph` and `POST /api/maps/:id/publish` (staff) — built
+`:id` is the store's PUBLISHED map. `PUT` takes the editor's `FloorPlan` (nodes, edges, shelves, landmarks) and saves it
+as the draft → `{ maps }`. `POST …/publish` re-runs `mapChecks()` on the server (422 with failing labels) and publishes
+the draft as the next version → `{ version }` (Supabase also returns the new `map_id`); the old one is superseded.
+Supabase mode (`supabase/migrations/005_map_editor.sql`): the draft is the editor's JSON on the store's DRAFT
+`store_maps` row (`plan_json`; no node or shelf rows, so shoppers see nothing change). `publish_map()` materializes it
+in one transaction: nodes, edges and verified landmarks get new rows with ids `<map id>:<editor id>`, placed shelves
+(global shelf IDs) move onto the new map, and one `map.publish` audit event is written. 409 `CONFLICT` if a newer map was
+published, or the draft was saved again between the server's check and the write; 422 for an unknown shelf ID or one
+another store uses.
+
+### `POST /api/observations` (shopper) — built
+`{ store_id, consent: "allowed", confidence, evidence, candidate }` → `{ id, merged, message }`. Structured text only.
+403 `NO_CONSENT` without consent. An identical pending observation (brand + name + shelf) gains a sighting instead.
+Unauthenticated, so rate-limited per client address (`OBSERVATION_RATE_LIMIT` per minute, default 20): 429
+`RATE_LIMITED` with `Retry-After`. Evidence is capped at 300 characters.
 
 ### `POST /api/speech`
 `{ text }` → `audio/mpeg`, or 503 when ElevenLabs isn't configured. The client then falls back to `speechSynthesis`.
 
-### `GET /api/audit?store_id=` (staff)
-`{ events: [{ id, actor_label, action, entity, entity_id, old_json, new_json, created_at }] }`
+### Staff reads — built
+Staff for the `store_id` (401/403 otherwise), both modes, `Cache-Control: private, no-store`. Supabase rows are mapped
+to the screens' types in `lib/staff/reads.ts`.
+- `GET /api/audit?store_id=` → `{ events: [{ id, actor_label, action, entity, entity_id, old_json, new_json, created_at, summary, evidence, original_observation }] }`, newest first (200 max). `action` is the Activity kind (`approve`, `reject`, `rescan`, `move`, `map`, `ai`).
+- `GET /api/observations?store_id=&status=NEEDS_REVIEW[,…]` → `{ observations: Observation[] }`, newest first. 400 for an unknown status.
+- `GET /api/maps?store_id=` → `{ maps: { published: FloorPlan, draft: FloorPlan|null, draftSavedAt } }`.
+- `GET /api/staff/snapshot[?store_id=]` → `{ snapshot: StaffSnapshot }`: all of the above plus published products, for
+  the first store the employee works at (or the one named; 403 if not theirs). The manager app loads this in Supabase
+  mode; memory mode still uses the demo Server Function.
 
 ## Invariants (copy into every agent prompt)
 
@@ -143,7 +175,11 @@ Rule: on a turn that reads a route step, `say` is ONLY the verbatim `planRoute` 
 Returns 503 `AGENT_UNAVAILABLE` without an API key. The UI must still work then: typed search, `/api/routes`, and buttons.
 
 ### ✅ Onboarding agent: `POST /api/agent/onboard` (LangChain deepagents, staff only)
-Request: `{ costar_property_id }` with a staff `Authorization: Bearer` token → `{ run_id, source: "costar"|"fixture", draft_id, report, todos, graph_summary, candidates_queued, log }` (not streamed yet).
+Request: `{ costar_property_id }` with a staff `Authorization: Bearer` token → `{ run_id, source: "costar"|"fixture", draft_id, report, todos, tool_calls, graph_summary, candidates_queued, log, view }` (not streamed yet). `view` (`lib/agents/onboarding/view.ts`) is the display model for the staff screen at `/business/onboard`: property identity, the draft graph's normalized nodes/edges with landmark flags, the floor plan placement, and up to 50 candidates. The screen calls the agent through the `runOnboardingDemo` Server Function (`lib/demo/onboard.ts`, memory mode only), so no staff token reaches the browser.
+One run at a time per server process (this route, the screen's stream route `POST /api/agent/onboard/stream` and the
+Server Function share the lock): a second concurrent run gets 429 `BUSY`. The screen's demo entry points (memory mode
+only) also require `ONBOARD_PASSCODE` when it is set (401 `PASSCODE`), and refuse in production when it isn't (503
+`PASSCODE_NOT_SET`).
 Until the real CoStar adapter exists, use `fixture-property-1`. Results are labelled `source: "fixture"`.
 Plan it follows: look up the property (CoStar) → fetch the Matterport model (sweeps, floor plan, panoramas) → convert sweeps to a draft graph (`lib/twin`) → pick landmark panoramas → run the shelf-recognition subagent on panorama crops → write a draft map and NEEDS_REVIEW observations → hand off to staff review.
 Output is always a DRAFT map plus NEEDS_REVIEW observations. Staff publish.

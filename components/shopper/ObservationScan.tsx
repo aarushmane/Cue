@@ -5,10 +5,10 @@
 //   (the vision pipeline is not connected), and Submit sends structured text only.
 // - Ending the scan, leaving the screen, or withdrawing consent stops every camera track.
 import { useEffect, useRef, useState, useTransition } from "react";
-import { submitShopperObservationDemo } from "@/lib/demo/adapter";
+import { callJson, jsonInit } from "@/lib/api/client";
 import { candLoc } from "@/lib/review/format";
 import { DEMO_RECOGNITION } from "@/lib/seed/demo-review";
-import { useShopper } from "./ShopperProvider";
+import { STORE_ID, useShopper } from "./ShopperProvider";
 import { sBtn } from "./ShopperShell";
 
 type Cam = "idle" | "requesting" | "on" | "blocked" | "unavailable";
@@ -108,7 +108,12 @@ export function ObservationScan() {
     start(async () => {
       if (detectIdx === null || !allowed || !scan) return;
       const d = DEMO_RECOGNITION[detectIdx];
-      const r = await submitShopperObservationDemo({ consent: s.prefs.contributions, confidence: d.confidence, evidence: d.evidence, candidate: d.candidate });
+      // POST /api/observations: structured text only. The server refuses (403) unless consent is "allowed".
+      const r = await callJson<{ id: string; merged: boolean; message: string }>(
+        fetch("/api/observations", jsonInit("POST", {
+          store_id: STORE_ID, consent: s.prefs.contributions, confidence: d.confidence, evidence: d.evidence, candidate: d.candidate,
+        })),
+      );
       const msg = r.ok ? r.message : `Not sent: ${r.error}`;
       setDetectIdx(null);
       setSubmitted(msg);

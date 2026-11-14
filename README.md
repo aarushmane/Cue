@@ -13,7 +13,7 @@ npm run test:e2e             # Playwright: v4 handoff scenarios + accessibility 
 PW_CHANNEL=chrome npm run test:e2e   # same, using an installed Google Chrome
 ```
 
-Open `/shopper` (voice-first shopper app) or `/business` (store manager: Home, Floor Plan, Review, More).
+Open `/shopper` (voice-first shopper app; spoken requests go to the shopper agent on `/shopper/guide`, typed search stays plain search) or `/business` (store manager: Home, Floor Plan, Review, More). Onboard a store from a CoStar id at `/business/onboard` (More → Onboard a store); a run takes 1–3 minutes.
 
 Try the API:
 
@@ -22,6 +22,19 @@ curl "localhost:3000/api/products?store_id=demo-store&query=almond%20milk"
 curl -X POST localhost:3000/api/routes -H 'content-type: application/json' \
   -d '{"store_id":"demo-store","start_node_id":"N01","product_id":"P06"}'
 ```
+
+## Testing on a phone
+
+The mic and camera only work over HTTPS (or on `localhost`), so a phone on your Wi-Fi needs one of:
+
+```bash
+npx next dev --experimental-https              # self-signed cert: open https://<your-laptop-ip>:3000 and accept the warning
+cloudflared tunnel --url http://localhost:3000 # or any tunnel (ngrok, etc.): real HTTPS URL, no warning
+```
+
+- **iPhone (Safari, iOS 18+):** the first tap anywhere unlocks spoken replies (iOS blocks speech output until a tap). Voice input needs Dictation on (Settings → General → Keyboard → Enable Dictation); otherwise the app says so and typing still works. Test with VoiceOver on as well.
+- **Android (Chrome):** voice recognition sends audio to Google's servers, so it needs a connection. Test with TalkBack.
+- **Both:** allow the mic and camera when asked. "Find my position" uses the back camera when there is one, takes about two seconds, and turns the camera off by itself.
 
 ## AI features
 
@@ -45,14 +58,35 @@ Every shopper scan (`/api/localize`) also lists the products visible in the fram
 3. Optional: unzip the CoStar kit into `data/costar-kit/` and set `COSTAR_KIT_DIR=data/costar-kit`.
 4. Onboard by CoStar id or Matterport model id, e.g. `{"costar_property_id":"9560712"}` (337 S Broadway, LA: Office/Retail, 86 scan points, 2 floors) or `{"costar_property_id":"bP9oEnqmeie"}` (941 Towne Ave, LA: Retail, 40 scan points). `fixture-property-1` still works.
 
+Run `npm run check:costar` after adding the keys: it confirms `neighbors`, floor plans, Vexcel coverage and LangSmith before you demo.
+
 The import uses Matterport anchor locations (position, floor, room, **navigation neighbors**) when the key exposes them, otherwise pano positions plus proximity edges that never cross a wall from the wall graph. Hackathon data is for hackathon use only: never commit it.
 
 Track strategy: `docs/tracks.md`.
 
+## Get a LangSmith trace
+
+The onboarding deep agent (`lib/agents/onboarding/agent.ts`) is traced end to end in LangSmith: the plan (`write_todos`), every tool call, the `shelf-recognizer` subagent and each model call.
+
+1. Create an API key at [smith.langchain.com](https://smith.langchain.com) (Settings → API Keys).
+2. Add to `.env.local` (never commit it) and restart `npm run dev`:
+   ```bash
+   LANGSMITH_TRACING=true
+   LANGSMITH_API_KEY=lsv2_...
+   LANGSMITH_PROJECT=storeguide   # optional; defaults to "default"
+   ```
+3. Run onboarding (the curl under [AI features](#ai-features)), then open the project in LangSmith.
+
+Each run is named `onboard <property id>`, tagged `storeguide`, `onboarding` and `costar` or `fixture`, and carries the metadata `run_id` (the same id as the `run_id` in the API response and, with Supabase, the `agent_runs` row) and `property_id`. To find a run, filter by tag or search the metadata for its `run_id`.
+
+On serverless hosts (Vercel), the function can be frozen as soon as the response is sent, which would drop the last trace batches. So `runOnboarding` calls `awaitAllCallbacks()` before it returns, on success and failure alike, with a 10 s cap so a slow LangSmith can't stall the response. Don't set `LANGCHAIN_CALLBACKS_BACKGROUND`: the flush already covers it, and setting it to `false` makes every agent step wait on LangSmith.
+
+Only the agent's own inputs and outputs are sent: the prompt, tool arguments and results, and the run labels above. API keys stay out of the trace because LangChain masks model secrets and the Matterport, Vexcel and Supabase credentials are only used inside tool code. To hide payloads entirely, also set `LANGSMITH_HIDE_INPUTS=true` and `LANGSMITH_HIDE_OUTPUTS=true`. Only the onboarding agent is traced. The shopper agent doesn't use LangChain.
+
 ## Supabase setup
 
 1. Create a project and copy its URL and anon key into `.env.local`.
-2. In the SQL editor, run `supabase/migrations/001_init.sql`, then `002_tracks.sql`, then `003_adaptive_inventory.sql`, then `supabase/seed.sql`.
+2. In the SQL editor, run `supabase/migrations/001_init.sql`, then `002_tracks.sql` through `006_rls_recursion_fix.sql` in order, then `supabase/seed.sql`. `npm run test:db` applies all of them to a throwaway Postgres in Docker and runs `supabase/tests/`; without Docker, point it at any Postgres 16 with `TEST_DB_URL=postgres://postgres@localhost:5432/postgres npm run test:db` (it creates and drops a scratch `sg_db_test` database).
 3. Create a staff user (Auth → Users), then run `insert into store_staff (store_id, user_id) values ('demo-store', '<user uuid>');`
 
 Once `NEXT_PUBLIC_SUPABASE_URL` is set, the app reads from Supabase instead of the in-memory seed.

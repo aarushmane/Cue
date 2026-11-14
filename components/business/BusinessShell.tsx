@@ -8,7 +8,9 @@ import type { ReactNode } from "react";
 import { ProductSheet } from "./ProductSheet";
 import { ShelfSheet } from "./ShelfSheet";
 import { StaffProvider, useStaff } from "./StaffProvider";
+import { NotStaffNotice, SessionBar, useStaffSession } from "./StaffSession";
 import { cx, ICON } from "./ui";
+import { SIGN_IN_PATH } from "@/lib/auth/config";
 
 const NAV = [
   { href: "/business", label: "Home", Icon: House, match: (p: string) => p === "/business" },
@@ -17,7 +19,7 @@ const NAV = [
   {
     href: "/business/more", label: "More", Icon: Menu,
     // Inventory, Activity and Shopper sightings live under More and highlight More.
-    match: (p: string) => ["/business/more", "/business/inventory", "/business/activity", "/business/sightings"].some((x) => p.startsWith(x)),
+    match: (p: string) => ["/business/more", "/business/inventory", "/business/activity", "/business/sightings", "/business/onboard"].some((x) => p.startsWith(x)),
   },
 ];
 
@@ -25,12 +27,15 @@ function Shell({ children }: { children: ReactNode }) {
   const path = usePathname();
   const s = useStaff();
   const { setSheetHost, toastMsg, snap, shelfSheet, productSheet } = s;
+  const session = useStaffSession();
+  const notStaff = session.mode === "supabase" && session.staff === false;
 
   return (
     <div className="relative mx-auto flex h-dvh w-full max-w-[430px] flex-col overflow-hidden bg-lavender text-charcoal">
       <div aria-hidden="true" className="h-[max(16px,env(safe-area-inset-top))] flex-none" />
+      {session.mode === "supabase" ? <SessionBar email={session.email} /> : null}
       <main className="flex flex-1 flex-col gap-[22px] overflow-x-hidden overflow-y-auto px-5 pt-1 pb-7">
-        {children}
+        {notStaff ? <NotStaffNotice email={session.email} /> : children}
       </main>
 
       <nav
@@ -84,6 +89,8 @@ function Shell({ children }: { children: ReactNode }) {
 }
 
 export function BusinessShell({ children }: { children: ReactNode }) {
+  // The sign-in page is under /business but is not part of the manager app: no nav, no staff data.
+  if (usePathname() === SIGN_IN_PATH) return <>{children}</>;
   return (
     <StaffProvider>
       <Shell>{children}</Shell>

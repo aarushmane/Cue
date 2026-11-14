@@ -122,7 +122,7 @@ class MemoryRepo implements StoreRepo {
 }
 
 // ───────────────────────────── Supabase ─────────────────────────────
-class SupabaseRepo implements StoreRepo {
+export class SupabaseRepo implements StoreRepo {
   readonly kind = "supabase" as const;
   constructor(private db: SupabaseClient) {}
 
@@ -167,7 +167,7 @@ class SupabaseRepo implements StoreRepo {
       await this.db
         .from("product_locations")
         .select(
-          "shelf_id, level, verified_at, last_seen_at, miss_count, products!inner(id, store_id, name, brand, variant, size, aliases, category), shelves!inner(id, aisle, section)",
+          "shelf_id, level, verified_at, last_seen_at, miss_count, products!inner(id, store_id, name, brand, variant, size, aliases, category, version), shelves!inner(id, aisle, section)",
         )
         .eq("status", "PUBLISHED")
         .eq("products.store_id", storeId),
@@ -177,7 +177,7 @@ class SupabaseRepo implements StoreRepo {
       verified_at: string;
       last_seen_at: string | null;
       miss_count: number;
-      products: { id: string; store_id: string; name: string; brand: string | null; variant: string | null; size: string | null; aliases: string[]; category: string | null };
+      products: { id: string; store_id: string; name: string; brand: string | null; variant: string | null; size: string | null; aliases: string[]; category: string | null; version?: number };
       shelves: { id: string; aisle: string; section: string };
     }[];
     return rows.map((r) => ({
@@ -189,6 +189,7 @@ class SupabaseRepo implements StoreRepo {
       size: r.products.size,
       aliases: r.products.aliases ?? [],
       category: r.products.category,
+      version: r.products.version ?? 1,
       location: { productId: r.products.id, shelfId: r.shelf_id, level: r.level, verifiedAt: r.verified_at, lastSeenAt: r.last_seen_at, missCount: r.miss_count },
       shelf: r.shelves,
     }));

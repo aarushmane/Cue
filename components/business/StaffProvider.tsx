@@ -1,10 +1,12 @@
 "use client";
 // Manager-side state shared across Home, Floor Plan, Review, Inventory and Activity.
 // Server data (products, observations, audit, maps) comes only from the demo adapter's snapshot; the UI never
-// writes it locally, so what you see is what the demo backend accepted. UI-only state (open sheet, unsaved
+// writes it locally, so what you see is what the backend accepted. Staff writes go to the API routes
+// (lib/staff/client.ts), which don't return a snapshot, so screens call refresh() after each one. UI-only state (open sheet, unsaved
 // review edits, the floor plan draft being edited) lives here so switching tabs does not lose it.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
-import { getStaffSnapshotDemo, resetDemoDataDemo } from "@/lib/demo/adapter";
+import { resetDemoDataDemo } from "@/lib/demo/adapter";
+import { loadStaffSnapshot } from "@/lib/staff/client";
 import type { DemoFail, StaffSnapshot } from "@/lib/demo/types";
 import type { FloorPlan, ReviewDraft } from "@/lib/types";
 
@@ -18,6 +20,8 @@ interface StaffCtx {
   loadError: string | null;
   /** Adopt the server snapshot attached to an adapter result (success or failure). */
   apply: (r: { snapshot?: StaffSnapshot } | DemoFail) => void;
+  /** Re-read the snapshot after an API route write (routes don't return one). Null if the read failed. */
+  refresh: () => Promise<StaffSnapshot | null>;
   toast: (msg: string) => void;
   toastMsg: string;
   reset: () => Promise<void>;
@@ -116,7 +120,7 @@ export function StaffProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let live = true;
-    getStaffSnapshotDemo()
+    loadStaffSnapshot()
       .then((r) => {
         if (!live) return;
         if (r.ok) setSnap(r.snapshot);
@@ -136,6 +140,13 @@ export function StaffProvider({ children }: { children: ReactNode }) {
 
   const apply = useCallback((r: { snapshot?: StaffSnapshot } | DemoFail) => {
     if (r.snapshot) setSnap(r.snapshot);
+  }, []);
+
+  const refresh = useCallback(async () => {
+    const r = await loadStaffSnapshot().catch(() => null);
+    if (!r?.ok) return null;
+    setSnap(r.snapshot);
+    return r.snapshot;
   }, []);
 
   const setDraft = useCallback((id: string, d: ReviewDraft | null) => {
@@ -169,13 +180,13 @@ export function StaffProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<StaffCtx>(
     () => ({
-      snap, loadError, apply, toast, toastMsg, reset,
+      snap, loadError, apply, refresh, toast, toastMsg, reset,
       reviewId, setReviewId, rTab, setRTab, drafts, setDraft, notice, setNotice, simulateFailure, setSimulateFailure,
       shelfSheet, openShelf: (id) => { setShelfSheet(id); if (id) setProductSheet(null); },
       productSheet, openProduct: (id) => { setProductSheet(id); if (id) setShelfSheet(null); },
       homeShelf, setHomeShelf, fp, setFp, sheetHost, setSheetHost,
     }),
-    [snap, loadError, apply, toast, toastMsg, reset, reviewId, rTab, drafts, setDraft, notice, simulateFailure, shelfSheet, productSheet, homeShelf, fp, setFp, sheetHost],
+    [snap, loadError, apply, refresh, toast, toastMsg, reset, reviewId, rTab, drafts, setDraft, notice, simulateFailure, shelfSheet, productSheet, homeShelf, fp, setFp, sheetHost],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
