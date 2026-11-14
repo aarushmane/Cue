@@ -240,6 +240,9 @@ export function ShopperProvider({ children }: { children: ReactNode }) {
       setGuide((v) => ({ ...v, busy: true, error: "", heard: turn.utterance ?? (turn.scan ? "Scan finished." : v.heard) }));
       const res = await postTurn(nav, g.history, turn);
       g.busy = false;
+      // "New search" (resetGuide) replaced the conversation while this turn was in flight: drop the late reply so it
+      // can't overwrite the new conversation or be spoken over it.
+      if (guideRef.current !== g) return false;
       if (!res.ok) {
         if (res.offline) g.online = false;
         setGuide((v) => ({ ...v, busy: false, online: res.offline ? false : v.online, error: res.say }));

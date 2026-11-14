@@ -47,3 +47,26 @@ test("agent offline (503) falls back to plain search", async ({ page }) => {
   await page.getByRole("button", { name: "Send" }).click();
   await expect(page).toHaveURL(/\/shopper\/(results|destination)$/);
 });
+
+test("a reply that arrives after New search is dropped", async ({ page }) => {
+  let release: () => void = () => {};
+  const gate = new Promise<void>((r) => (release = r));
+  await page.route("**/api/agent/shopper", async (route) => {
+    await gate;
+    await route.fulfill({
+      json: { say: "Late reply.", agent_text: "Late reply.", route_text: [], choices: ["Stale choice"], ui_state: "SEARCHING", nav: { ...base, state: "SEARCHING" }, history: ["h"] },
+    });
+  });
+  await page.goto("/shopper/guide");
+  await page.getByLabel("Or type a reply").fill("eggs");
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.getByText("Thinking…")).toBeVisible();
+  await page.getByRole("button", { name: "‹ New search" }).click();
+  await expect(page).toHaveURL(/\/shopper$/);
+  const replied = page.waitForResponse("**/api/agent/shopper");
+  release();
+  await replied;
+  await page.waitForTimeout(300);
+  // The shell's live region persists across client navigation: the late reply must not be announced.
+  await expect(page.getByRole("status").filter({ hasText: "Late reply." })).toHaveCount(0);
+});
