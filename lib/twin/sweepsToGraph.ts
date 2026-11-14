@@ -26,8 +26,19 @@ export interface Obstacle {
   h: number;
 }
 
+/** A wall as a line segment in floor meters (Matterport's wall graph). */
+export interface WallSegment {
+  ax: number;
+  ay: number;
+  bx: number;
+  by: number;
+}
+
 export interface SweepsToGraphOptions {
   floorId: string;
+  /** Walls on this floor. Used only for proximity-inferred edges: Matterport's own neighbor links are trusted,
+   *  since they already route through doorways (and the wall graph does not mark door gaps reliably). */
+  walls?: WallSegment[];
   /** Used only when sweeps carry no neighbor lists: connect sweeps closer than this. */
   maxEdgeM?: number;
   /** Used only when sweeps carry no neighbor lists: keep at most this many nearest neighbors per sweep. */
@@ -72,6 +83,17 @@ function segmentHitsRect(ax: number, ay: number, bx: number, by: number, r: Obst
   return true;
 }
 
+/** True when segments AB and CD properly cross (touching at an endpoint does not count). */
+export function segmentsCross(ax: number, ay: number, bx: number, by: number, w: WallSegment): boolean {
+  const orient = (px: number, py: number, qx: number, qy: number, rx: number, ry: number) => (qx - px) * (ry - py) - (qy - py) * (rx - px);
+  const d1 = orient(w.ax, w.ay, w.bx, w.by, ax, ay);
+  const d2 = orient(w.ax, w.ay, w.bx, w.by, bx, by);
+  const d3 = orient(ax, ay, bx, by, w.ax, w.ay);
+  const d4 = orient(ax, ay, bx, by, w.bx, w.by);
+  const eps = 1e-9;
+  return ((d1 > eps && d2 < -eps) || (d1 < -eps && d2 > eps)) && ((d3 > eps && d4 < -eps) || (d3 < -eps && d4 > eps));
+}
+
 function components(ids: string[], edges: MapEdge[]): string[][] {
   const adj = new Map(ids.map((id) => [id, [] as string[]]));
   for (const e of edges) {
@@ -101,7 +123,7 @@ function components(ids: string[], edges: MapEdge[]): string[][] {
 
 export function sweepsToGraph(sweeps: TwinSweep[], opts: SweepsToGraphOptions): DraftGraph {
   const {
-    floorId, maxEdgeM = 4, maxNeighbors = 4, obstacles = [], entranceSweepId, paddingRatio = 0.05, idPrefix = "T",
+    floorId, maxEdgeM = 4, maxNeighbors = 4, obstacles = [], walls = [], entranceSweepId, paddingRatio = 0.05, idPrefix = "T",
   } = opts;
   const warnings: string[] = [];
   const floor = sweeps.filter((s) => s.floorId === floorId);
@@ -134,7 +156,10 @@ export function sweepsToGraph(sweeps: TwinSweep[], opts: SweepsToGraphOptions): 
   }));
 
   const dist = (a: TwinSweep, b: TwinSweep) => Math.hypot(a.x - b.x, a.y - b.y);
-  const blocked = (a: TwinSweep, b: TwinSweep) => obstacles.some((o) => segmentHitsRect(a.x, a.y, b.x, b.y, o));
+  const hasNeighbors = floor.some((s) => s.neighbors && s.neighbors.length > 0);
+  const blocked = (a: TwinSweep, b: TwinSweep) =>
+    obstacles.some((o) => segmentHitsRect(a.x, a.y, b.x, b.y, o)) ||
+    (!hasNeighbors && walls.some((w) => segmentsCross(a.x, a.y, b.x, b.y, w)));
 
   const pairs = new Map<string, [TwinSweep, TwinSweep]>();
   const addPair = (a: TwinSweep, b: TwinSweep) => {
@@ -143,17 +168,17 @@ export function sweepsToGraph(sweeps: TwinSweep[], opts: SweepsToGraphOptions): 
     if (!pairs.has(key)) pairs.set(key, a.id < b.id ? [a, b] : [b, a]);
   };
 
-  const hasNeighbors = floor.some((s) => s.neighbors && s.neighbors.length > 0);
   if (hasNeighbors) {
     for (const s of floor) for (const n of s.neighbors ?? []) {
       const other = byId.get(n);
       if (other) addPair(s, other); // neighbors on other floors are dropped (stairs/elevators come later)
     }
   } else {
-    warnings.push(`Sweeps have no neighbor data; edges inferred from proximity (≤ ${maxEdgeM} m, ${maxNeighbors} nearest). Staff must verify.`);
+    warnings.push(`Sweeps have no neighbor data; edges inferred from proximity (≤ ${maxEdgeM} m, ${maxNeighbors} nearest${walls.length ? ", not through walls" : ""}). Staff must verify.`);
+    // Pick nearest neighbors among those not blocked, so a wall doesn't use up a sweep's neighbor slots.
     for (const s of floor) {
       floor
-        .filter((o) => o.id !== s.id && dist(s, o) <= maxEdgeM)
+        .filter((o) => o.id !== s.id && dist(s, o) <= maxEdgeM && !blocked(s, o))
         .sort((a, b) => dist(s, a) - dist(s, b))
         .slice(0, maxNeighbors)
         .forEach((o) => addPair(s, o));
@@ -171,6 +196,7 @@ export function sweepsToGraph(sweeps: TwinSweep[], opts: SweepsToGraphOptions): 
     edges.push({ id: `${idPrefix}E${String(edges.length + 1).padStart(3, "0")}`, from: idFor.get(a.id)!, to: idFor.get(b.id)!, weight: Math.ceil(dist(a, b) * 10) / 10 });
   }
   if (droppedByObstacle) warnings.push(`${droppedByObstacle} candidate edge(s) dropped because they cross a shelf or wall.`);
+  if (hasNeighbors && floor.some((s) => !s.neighbors?.length)) warnings.push(`${floor.filter((s) => !s.neighbors?.length).length} scan point(s) have no neighbor links; connect them in the map editor.`);
 
   const comps = components(nodes.map((n) => n.id), edges);
   if (comps.length > 1) warnings.push(`Graph has ${comps.length} disconnected parts; connect them in the map editor before publishing.`);

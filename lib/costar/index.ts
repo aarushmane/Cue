@@ -1,16 +1,14 @@
 import { fixtureLayers } from "./fixture";
+import { liveLayers } from "./live";
+import { matterportConfigured } from "./matterport";
 import type { DataLayers } from "./types";
 
-export type { DataLayers, CostarProperty, TwinModel, AerialView } from "./types";
+export type { DataLayers, CostarProperty, TwinModel, AerialView, FloorPlanImage } from "./types";
 
 /**
- * Returns the CoStar/Matterport/Vexcel adapter. Until the event's SDK/API details are known, only the fixture
- * provider exists. TODO(B): implement `costarLayers` in ./costar.ts against the CoStar toolkit (SDK, MCP or
- * OpenAPI), mapping responses into ./types.ts. Key questions are listed in docs/tracks.md.
+ * Real layers (Matterport Model API + models_index.csv + Vexcel + optional CoStar kit) when the Matterport key
+ * and token are set; otherwise the labelled fixture. "fixture-property-1" always resolves to the fixture.
  */
 export function getDataLayers(): DataLayers {
-  if (process.env.COSTAR_API_KEY && process.env.MATTERPORT_API_KEY) {
-    throw new Error("CoStar keys are set but the real adapter (lib/costar/costar.ts) is not implemented yet.");
-  }
-  return fixtureLayers;
+  return matterportConfigured() ? liveLayers : fixtureLayers;
 }

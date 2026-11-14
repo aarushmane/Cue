@@ -4,6 +4,8 @@ import { tool } from "langchain";
 import { z } from "zod";
 import { sweepsToGraph } from "../../twin/sweepsToGraph";
 import { recognizeShelf } from "../../vision/recognizeShelf";
+import { analyzeAerial } from "../../vision/aerial";
+import { aiConfigured } from "../../ai/provider";
 import { saveDraft } from "../../db/writes";
 import { logEvent, type OnboardingRun } from "./run-context";
 
@@ -31,13 +33,25 @@ export function onboardingTools(run: OnboardingRun) {
       logEvent(run, "fetch_twin", { model_id, found: Boolean(twin) });
       if (!twin) return json({ error: "MODEL_NOT_FOUND" });
       run.twin = twin;
-      const perFloor = twin.floors.map((f) => ({ ...f, sweeps: twin.sweeps.filter((s) => s.floorId === f.id).length }));
+      const rooms = twin.rooms ?? {};
+      const perFloor = twin.floors.map((f) => {
+        const onFloor = twin.sweeps.filter((s) => s.floorId === f.id);
+        const roomCounts: Record<string, number> = {};
+        for (const s of onFloor) if (rooms[s.id]) roomCounts[rooms[s.id]] = (roomCounts[rooms[s.id]] ?? 0) + 1;
+        return { ...f, sweeps: onFloor.length, walls: twin.walls?.[f.id]?.length ?? 0, rooms: roomCounts };
+      });
+      // Scan points in entry-like rooms are the best entrance candidates (Matterport room classification).
+      const entranceCandidates = twin.sweeps
+        .filter((s) => /entry|foyer|lobby|vestibule|reception|storefront/i.test(rooms[s.id] ?? ""))
+        .slice(0, 6)
+        .map((s) => ({ sweep_id: s.id, floor_id: s.floorId, room: rooms[s.id] }));
       return json({
         source: run.layers.source,
         floors: perFloor,
         sweeps_with_neighbor_data: twin.sweeps.filter((s) => s.neighbors?.length).length,
         panoramas: twin.panoramas.length,
         has_floor_plan_image: Boolean(twin.floorPlanImageUrl),
+        entrance_candidates: entranceCandidates,
       });
     },
     {
@@ -51,13 +65,25 @@ export function onboardingTools(run: OnboardingRun) {
     async () => {
       if (!run.property) return json({ error: "Call lookup_property first." });
       const a = await run.layers.getAerial(run.property.latitude, run.property.longitude);
-      run.aerialNotes = a?.notes;
-      logEvent(run, "inspect_aerial", { has_image: Boolean(a?.imageUrl) });
-      return json({ source: run.layers.source, aerial: a });
+      // The image stays server-side; only the vision model's structured reading goes back into agent context.
+      const analysis =
+        a?.imageDataUrl && aiConfigured()
+          ? await analyzeAerial(a.imageDataUrl, { name: run.property.name, address: run.property.address, extentM: a.extentM }).catch(() => null)
+          : null;
+      run.aerialNotes = [a?.notes, analysis && `Entrance likely faces ${analysis.entrance_side} (${analysis.confidence}). Parking: ${analysis.parking}. Approach: ${analysis.approach_notes}`]
+        .filter(Boolean)
+        .join(" ");
+      logEvent(run, "inspect_aerial", { has_image: Boolean(a?.imageDataUrl), analysis });
+      return json({
+        source: run.layers.source,
+        notes: a?.notes ?? "No aerial view.",
+        analysis,
+        caveat: "The Matterport model frame is not north-aligned, so the entrance side cannot be mapped to a scan point automatically. Prefer entrance_candidates from fetch_twin; otherwise pass null.",
+      });
     },
     {
       name: "inspect_aerial",
-      description: "Get the Vexcel aerial view of the property to find the public entrance and the drop-off/parking approach.",
+      description: "Read the Vexcel aerial photo of the property with vision: which side the public entrance faces, parking/drop-off, and the walking approach.",
       schema: z.object({}),
     },
   );
@@ -65,7 +91,11 @@ export function onboardingTools(run: OnboardingRun) {
   const buildDraftGraph = tool(
     async ({ floor_id, entrance_sweep_id }) => {
       if (!run.twin) return json({ error: "Call fetch_twin first." });
-      const g = sweepsToGraph(run.twin.sweeps, { floorId: floor_id, entranceSweepId: entrance_sweep_id ?? undefined });
+      const g = sweepsToGraph(run.twin.sweeps, {
+        floorId: floor_id,
+        entranceSweepId: entrance_sweep_id ?? undefined,
+        walls: run.twin.walls?.[floor_id] ?? [],
+      });
       run.graph = g;
       logEvent(run, "build_draft_graph", { nodes: g.nodes.length, edges: g.edges.length, components: g.components.length });
       return json({

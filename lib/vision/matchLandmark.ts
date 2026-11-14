@@ -47,7 +47,9 @@ export function decidePosition(match: LandmarkMatch, landmarks: Landmark[], grap
 }
 
 async function referenceImage(url: string | null): Promise<string | null> {
-  if (!url || !url.startsWith("/")) return null; // only local demo references for now
+  if (!url) return null;
+  if (url.startsWith("https://")) return url; // Matterport panorama face; fetched by resolveImage (host-restricted)
+  if (!url.startsWith("/")) return null;
   try {
     const buf = await readFile(path.join(process.cwd(), "public", url));
     return buf.toString("base64");

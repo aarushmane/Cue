@@ -15,13 +15,14 @@ import { newRun, type OnboardingRun } from "./run-context";
 import { onboardingTools } from "./tools";
 
 const SYSTEM = `You onboard a physical store into StoreGuide, an indoor navigation app for blind and low-vision shoppers.
-Given a CoStar property id, produce a DRAFT navigation map that store staff will review. You never publish anything.
+Given a CoStar property id (or a Matterport model id), produce a DRAFT navigation map that store staff will review. You never publish anything.
 
 Your FIRST action must be one write_todos call listing the steps below (staff watch this plan, so always write it, even though
 the job looks short). Mark each todo completed as you finish it. Steps:
 1. lookup_property to identify the building and its Matterport model.
 2. fetch_twin, then pick the floor with the public sales area (usually the ground floor).
-3. inspect_aerial to find the public entrance. Choose the sweep nearest it as entrance_sweep_id when you can tell; otherwise pass null and say so.
+3. inspect_aerial to describe the outdoor approach (entrance side, parking). For entrance_sweep_id use a scan point from
+   fetch_twin's entrance_candidates on that floor when there is one; otherwise pass null and say staff must mark it.
 4. build_draft_graph for that floor.
 5. propose_landmarks (about 6).
 6. If panoramas exist for the landmarks, delegate shelf recognition for up to 3 of them to the shelf-recognizer subagent.

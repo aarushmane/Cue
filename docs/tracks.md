@@ -33,8 +33,16 @@ For localization, demo live in the venue room, which is controlled and reliable.
 - [ ] CoStar: name the layers used (at least 2) and include a screenshot of a twin-imported graph over the Matterport floor plan.
 - [ ] Backup recording of the full 3-minute demo.
 
-## Risks to check in the first 2 hours (ask at the CoStar table or on Discord)
+## CoStar track: what we learned from the quickstart (Nov 14)
 
-1. Which Houston/LA properties have **both** a Matterport scan and Vexcel coverage? Ideally pick a retail building.
-2. Does the Matterport API expose **sweep positions and sweep neighbors**? If it does, the twin import is about 2 h of work. If it only exposes panoramas or a mesh, fall back to the floor-plan image plus manual graph editing, and use panoramas only as landmarks.
-3. Is `deepagents` for JS/TS (`deepagents` on npm) acceptable for the LangChain prize, or do they expect the Python package? If Python is required, run the onboarding agent as a small FastAPI service.
+- Judged on: use of the data 30 (combine layers, not decoration), agentic depth 30, customer usefulness 25 ("would a CoStar customer switch this on Monday?"), demo 15. Must use at least 2 of the 3 layers. Pitch angle: an accessible-navigation map becomes a listing feature for retail landlords and tenants, generated from the twin they already have.
+- Keys: `/costar-keys` in the track Discord (Matterport key + token, Vexcel key, CoStar kit link + zip password). `/ask-costar` answers API questions.
+- Matterport Model API is GraphQL at `api.matterport.com/api/models/graph` with basic auth. `locations` (AnchorLocation) has `position`, `floor`, `room` and `neighbors` ("recommended for navigation"), so the twin import has real edges. **Verify on the first call that the hackathon key returns `neighbors`**; if not, the import falls back to proximity edges that never cross a wall.
+- Walls come as a graph (meters, same frame as panos); floor plans have origin (bottom-left, meters) and pixels per meter, so the graph can be drawn over the real plan for the CoStar screenshot.
+- The ~15,000 models are mostly apartments and amenity spaces. Real retail interiors with enough scans: 337 S Broadway (CoStar 9560712, `6FNMVoyPrL1`) and 941 Towne Ave (`bP9oEnqmeie`). No grocery aisles exist in the set: demo the twin import on these, and the shopper flow on our seeded demo store.
+- The CoStar kit join is untested by the track team; our kit reader is best-effort.
+
+## Remaining risks
+
+1. Does the hackathon key return `locations.neighbors`? (see above)
+2. Is `deepagents` for JS/TS (`deepagents` on npm) acceptable for the LangChain prize, or do they expect the Python package? If Python is required, run the onboarding agent as a small FastAPI service.

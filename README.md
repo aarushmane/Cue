@@ -32,6 +32,14 @@ curl -X POST localhost:3000/api/agent/shopper -H 'content-type: application/json
   -d '{"nav":{"store_id":"demo-store","current_node_id":"N01","position_confidence":"CONFIRMED"},"history":[],"utterance":"I need eggs"}'
 ```
 
+### CoStar track data (real)
+1. In the track Discord run `/costar-keys`; put `MATTERPORT_API_KEY`, `MATTERPORT_API_TOKEN`, `VEXCEL_API_KEY` in `.env.local`.
+2. Download `models_index.csv` from the track quickstart page into `data/` (git-ignored). It maps CoStar property ids to Matterport models.
+3. Optional: unzip the CoStar kit into `data/costar-kit/` and set `COSTAR_KIT_DIR=data/costar-kit`.
+4. Onboard by CoStar id or Matterport model id, e.g. `{"costar_property_id":"9560712"}` (337 S Broadway, LA: Office/Retail, 86 scan points, 2 floors) or `{"costar_property_id":"bP9oEnqmeie"}` (941 Towne Ave, LA: Retail, 40 scan points). `fixture-property-1` still works.
+
+The import uses Matterport anchor locations (position, floor, room, **navigation neighbors**) when the key exposes them, otherwise pano positions plus proximity edges that never cross a wall from the wall graph. Hackathon data is for hackathon use only: never commit it.
+
 Track strategy: `docs/tracks.md`.
 
 ## Supabase setup
@@ -55,7 +63,7 @@ Once `NEXT_PUBLIC_SUPABASE_URL` is set, the app reads from Supabase instead of t
 | `lib/agents/shopper/` | Shopper voice agent (Claude tool use): Amazon Practical AI track |
 | `lib/agents/onboarding/` | Store onboarding deep agent (LangChain deepagents): LangChain and CoStar tracks |
 | `lib/twin/` | Matterport scan points → draft walkable graph |
-| `lib/costar/` | CoStar/Matterport/Vexcel adapter interface (fixture data until keys arrive) |
+| `lib/costar/` | CoStar track layers: Matterport Model API (`matterport.ts`), Vexcel ortho (`vexcel.ts`), CoStar id → model join (`modelsIndex.ts`), CoStar kit (`costarKit.ts`); fixture when no Matterport key |
 | `lib/vision/` | Landmark matching (localization) and shelf recognition |
 | `lib/auth/requireStaff.ts` | Staff checks for every mutation route |
 | `app/api/` | Route handlers |

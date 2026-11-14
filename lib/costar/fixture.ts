@@ -46,6 +46,6 @@ export const fixtureLayers: DataLayers = {
     return modelId === FIXTURE_TWIN.modelId ? FIXTURE_TWIN : null;
   },
   async getAerial() {
-    return { imageUrl: "", capturedAt: null, notes: "Fixture: no aerial image. Entrance assumed at sweep sw-00 (front-left)." };
+    return { imageDataUrl: null, capturedAt: null, extentM: null, notes: "Fixture: no aerial image. Entrance assumed at sweep sw-00 (front-left)." };
   },
 };

@@ -5,17 +5,19 @@ import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import type { Part } from "@google/genai";
 import { CLAUDE_MODEL, FALLBACK_PARAMS, getClaude, imageSource } from "./claude";
 import { GEMINI_MODEL, getGemini, imagePart, toGeminiSchema } from "./gemini";
+import { resolveImage } from "./images";
 import { aiProvider } from "./provider";
 
-/** Provider-neutral prompt piece: text, or an image as a data URL / raw base64 JPEG. */
+/** Provider-neutral prompt piece: text, or an image as a data URL / raw base64 JPEG / Matterport CDN https URL. */
 export type Piece = { text: string } | { image: string };
 
 export async function structuredVision<S extends z.ZodObject>(
   schema: S,
-  pieces: Piece[],
+  input: Piece[],
   opts: { maxTokens: number; effort: "low" | "medium" | "high" },
 ): Promise<z.infer<S> | null> {
   const provider = aiProvider();
+  const pieces = await Promise.all(input.map(async (p) => ("image" in p ? { image: await resolveImage(p.image) } : p)));
 
   if (provider === "anthropic") {
     const content = pieces.map((p) =>
