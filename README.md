@@ -1,8 +1,39 @@
 # StoreGuide
 
-Voice-first indoor product finding for blind and low-vision shoppers. Stores keep a verified shelf-level inventory, and shoppers ask for an item and hear a computed route to it.
+Voice-first indoor product finding for blind and low-vision shoppers, plus the store's Matterport 3D tour.
 
-## Run it
+- `/` — the Matterport Showcase tour (in-store POV) of the supplied scan `Muo5jpq44Xk`.
+- `/scene/:propertyId` — the tour for a saved CoStar property.
+- `/shopper` and `/business` — the shopper and store-manager apps (see [Shopper and manager apps](#shopper-and-manager-apps)).
+
+```sh
+npm install
+npm run dev   # http://localhost:3000
+```
+
+After `npm install` changes dependencies, restart `next dev`; a server started before the install can keep serving 500s.
+
+## 3D tour
+
+The scene is the standard Matterport Showcase embed (`https://my.matterport.com/show/?m=<model>&play=1&qs=1`), so navigation is Matterport's own: select a floor marker or use the arrow keys to jump between scan points, drag to look around, scroll or pinch to zoom. `play=1` starts without the play button and `qs=1` skips the fly-in. The toolbar's Reset view reloads the tour at its start point; Fullscreen fills the screen. The model must be public or unlisted in Matterport for the embed to load.
+
+### Property data
+
+Use `.env.local` for the Supabase settings in `.env.example`. The existing `stores` table already has `costar_property_id`, `matterport_model_id`, `name`, and `address`.
+
+- `POST /api/db/properties`: insert a property/scan mapping using `Authorization: Bearer <PROPERTY_WRITE_TOKEN>`. Body: `{ "property_id": "236314", "matterport_model_id": "Muo5jpq44Xk", "name": "Sample Storefront", "address": "6301–6335 Ashcroft Dr, Houston, TX" }`. Retries return the existing row without updating it.
+- `/scene/236314`: read the newest saved scan for that property from Supabase and open its tour.
+
+Run `npm run property:add-example` while the dev server is running to save the supplied property through the API. It reads the write token from the environment and does not print credentials.
+
+### Design system
+
+Read [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md) before frontend changes to the tour page. Run `npm run check:ui` with the dev server running for desktop/mobile screenshots and embed/toolbar checks (uses installed Google Chrome; set `PW_CHANNEL=chromium` to use Playwright's bundled browser). The shopper and manager apps keep their own v4 theme in `app/legacy.css`, loaded only by their route layouts, so the two styling systems never meet on one page.
+
+## Shopper and manager apps
+
+
+### Run it
 
 ```bash
 npm install
@@ -23,7 +54,7 @@ curl -X POST localhost:3000/api/routes -H 'content-type: application/json' \
   -d '{"store_id":"demo-store","start_node_id":"N01","product_id":"P06"}'
 ```
 
-## Testing on a phone
+### Testing on a phone
 
 The mic and camera only work over HTTPS (or on `localhost`), so a phone on your Wi-Fi needs one of:
 
@@ -36,7 +67,7 @@ cloudflared tunnel --url http://localhost:3000 # or any tunnel (ngrok, etc.): re
 - **Android (Chrome):** voice recognition sends audio to Google's servers, so it needs a connection. Test with TalkBack.
 - **Both:** allow the mic and camera when asked. "Find my position" uses the back camera when there is one, takes about two seconds, and turns the camera off by itself.
 
-## AI features
+### AI features
 
 Set `GEMINI_API_KEY` (free tier, Google AI Studio) or `ANTHROPIC_API_KEY` in `.env.local`. With both set, Anthropic wins unless `AI_PROVIDER=gemini`. Gemini uses `gemini-3.1-flash-lite` (override with `GEMINI_MODEL`); Claude uses `claude-opus-5-5` (override with `CLAUDE_MODEL`) with server-side refusal fallback. Every provider goes through the same tools and the same zod validation (`lib/ai/provider.ts`, `lib/ai/structured.ts`). Without any key, the agent and localization routes return 503 and the app falls back to typed search and buttons. The free tier is rate-limited per model per day (`gemini-3.5-flash` measured at 20 requests/day; one onboarding run uses about 8–10), so develop on flash-lite, set `GEMINI_AGENT_MODEL=gemini-3.5-flash` only for the demo recording, and don't loop scans during judging.
 
@@ -64,7 +95,7 @@ The import uses Matterport anchor locations (position, floor, room, **navigation
 
 Track strategy: `docs/tracks.md`.
 
-## Get a LangSmith trace
+### Get a LangSmith trace
 
 The onboarding deep agent (`lib/agents/onboarding/agent.ts`) is traced end to end in LangSmith: the plan (`write_todos`), every tool call, the `shelf-recognizer` subagent and each model call.
 
@@ -83,7 +114,7 @@ On serverless hosts (Vercel), the function can be frozen as soon as the response
 
 Only the agent's own inputs and outputs are sent: the prompt, tool arguments and results, and the run labels above. API keys stay out of the trace because LangChain masks model secrets and the Matterport, Vexcel and Supabase credentials are only used inside tool code. To hide payloads entirely, also set `LANGSMITH_HIDE_INPUTS=true` and `LANGSMITH_HIDE_OUTPUTS=true`. Only the onboarding agent is traced. The shopper agent doesn't use LangChain.
 
-## Supabase setup
+### Supabase setup
 
 1. Create a project and copy its URL and anon key into `.env.local`.
 2. In the SQL editor, run `supabase/migrations/001_init.sql`, then `002_tracks.sql` through `006_rls_recursion_fix.sql` in order, then `supabase/seed.sql`. `npm run test:db` applies all of them to a throwaway Postgres in Docker and runs `supabase/tests/`; without Docker, point it at any Postgres 16 with `TEST_DB_URL=postgres://postgres@localhost:5432/postgres npm run test:db` (it creates and drops a scratch `sg_db_test` database).
@@ -91,7 +122,7 @@ Only the agent's own inputs and outputs are sent: the prompt, tool arguments and
 
 Once `NEXT_PUBLIC_SUPABASE_URL` is set, the app reads from Supabase instead of the in-memory seed.
 
-## Layout
+### Layout
 
 | Path | What |
 |---|---|

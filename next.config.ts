@@ -1,7 +1,6 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
   cacheComponents: true,
   // Lets the Supabase-mode e2e server (playwright.auth.config.ts) build into its own directory.
   distDir: process.env.NEXT_DIST_DIR || ".next",
@@ -12,14 +11,8 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [{ source: "/staff/inventory", destination: "/business/sightings", permanent: false }];
   },
-  turbopack: {
-    rules: {
-      "*.css": {
-        loaders: ["@tailwindcss/turbopack"],
-        as: "*.css",
-      },
-    },
-  },
+  // Tailwind runs through postcss.config.mjs (@tailwindcss/postcss) for every stylesheet; a second
+  // Turbopack Tailwind loader would process CSS twice.
 };
 
 export default nextConfig;
