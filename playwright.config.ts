@@ -25,6 +25,7 @@ export default defineConfig({
     url: `http://localhost:${PORT}/shopper`,
     reuseExistingServer: true,
     timeout: 120_000,
-    env: { NEXT_PUBLIC_SUPABASE_URL: "", NEXT_PUBLIC_SUPABASE_ANON_KEY: "" },
+    // Memory mode, with a known staff token for the API route tests (tests/e2e/api.spec.ts).
+    env: { NEXT_PUBLIC_SUPABASE_URL: "", NEXT_PUBLIC_SUPABASE_ANON_KEY: "", STAFF_DEMO_TOKEN: process.env.STAFF_DEMO_TOKEN || "e2e-staff" },
   },
 });
