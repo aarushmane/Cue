@@ -65,10 +65,13 @@ interface ShopperCtx {
   guide: GuideView;
   /** Voice entry point: sends the utterance to the agent; falls back to plain search when the agent is offline. */
   ask: (text: string) => Promise<void>;
-  /** One agent turn (utterance and/or scan result). Returns false when it failed. */
-  sendTurn: (turn: GuideTurn) => Promise<boolean>;
+  /** One agent turn (utterance and/or scan result). */
+  sendTurn: (turn: GuideTurn) => Promise<TurnResult>;
   resetGuide: () => void;
 }
+
+/** ok: reply applied · busy: another turn is in flight (nothing sent) · stale: conversation was reset meanwhile · failed: error shown */
+export type TurnResult = "ok" | "busy" | "stale" | "failed";
 
 export interface GuideView {
   online: boolean | null;
@@ -124,6 +127,11 @@ export function ShopperProvider({ children }: { children: ReactNode }) {
     nav: { store_id: STORE_ID }, history: [], busy: false, online: null,
   });
   const prefsRef = useRef(prefs);
+  // Current path for decisions made after an await (the closure's `path` can be stale by then).
+  const pathRef = useRef(path);
+  useEffect(() => {
+    pathRef.current = path;
+  }, [path]);
   useEffect(() => {
     prefsRef.current = prefs;
   }, [prefs]);
@@ -231,9 +239,9 @@ export function ShopperProvider({ children }: { children: ReactNode }) {
   }, [selected]);
 
   const sendTurn = useCallback(
-    async (turn: GuideTurn): Promise<boolean> => {
+    async (turn: GuideTurn): Promise<TurnResult> => {
       const g = guideRef.current;
-      if (g.busy) return false;
+      if (g.busy) return "busy";
       g.busy = true;
       const sentPrefs = toNavPrefs(prefsRef.current);
       const nav: GuideNav = { ...g.nav, prefs: sentPrefs };
@@ -242,12 +250,12 @@ export function ShopperProvider({ children }: { children: ReactNode }) {
       g.busy = false;
       // "New search" (resetGuide) replaced the conversation while this turn was in flight: drop the late reply so it
       // can't overwrite the new conversation or be spoken over it.
-      if (guideRef.current !== g) return false;
+      if (guideRef.current !== g) return "stale";
       if (!res.ok) {
         if (res.offline) g.online = false;
         setGuide((v) => ({ ...v, busy: false, online: res.offline ? false : v.online, error: res.say }));
         if (!res.offline) say(res.say);
-        return false;
+        return "failed";
       }
       const reply: GuideReply = res.reply;
       g.nav = reply.nav;
@@ -260,7 +268,7 @@ export function ShopperProvider({ children }: { children: ReactNode }) {
         routeText: reply.route_text, choices: reply.choices, error: "",
       }));
       say(reply.say, reply.nav.prefs?.speech_rate);
-      return true;
+      return "ok";
     },
     [say, setPrefs],
   );
@@ -275,17 +283,24 @@ export function ShopperProvider({ children }: { children: ReactNode }) {
       // A function, not a narrowed property read: sendTurn changes `online` while we await it.
       const offline = () => guideRef.current.online === false;
       if (!offline()) {
-        if (await sendTurn({ utterance })) {
-          if (path !== "/shopper/guide") router.push("/shopper/guide");
+        const r = await sendTurn({ utterance });
+        if (r === "ok") {
+          if (pathRef.current !== "/shopper/guide") router.push("/shopper/guide");
           return;
         }
+        if (r === "busy") {
+          // Don't start a second request (or a plain search) while the assistant is still answering.
+          setMsg("Still working on your last request. Try again in a moment.");
+          return;
+        }
+        if (r === "stale") return;
         // One-off failure on the guide screen: the error is already shown and spoken there.
-        if (!offline() && path === "/shopper/guide") return;
+        if (!offline() && pathRef.current === "/shopper/guide") return;
       }
       // Agent offline (no API key) or unreachable from the search screen: plain search still works.
       await runSearch(utterance);
     },
-    [path, router, runSearch, sendTurn, setMsg],
+    [router, runSearch, sendTurn, setMsg],
   );
 
   const resetGuide = useCallback(() => {

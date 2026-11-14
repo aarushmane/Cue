@@ -44,8 +44,8 @@ export function PositionScan() {
 
   const finish = async (scan: LocalizeResult) => {
     setPhase("sending");
-    const ok = await s.sendTurn({ scan });
-    setPhase(ok ? "idle" : "error");
+    const r = await s.sendTurn({ scan });
+    setPhase(r === "failed" ? "error" : "idle");
   };
 
   const scan = async () => {
