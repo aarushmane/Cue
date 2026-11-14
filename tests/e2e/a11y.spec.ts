@@ -3,7 +3,7 @@ import { resetDemo } from "./helpers";
 
 const PAGES = [
   "/business", "/business/floor-plan", "/business/review", "/business/more", "/business/inventory", "/business/activity",
-  "/shopper", "/shopper/settings", "/shopper/consent", "/shopper/contribute", "/shopper/help",
+  "/shopper", "/shopper/guide", "/shopper/settings", "/shopper/consent", "/shopper/contribute", "/shopper/help",
 ];
 
 async function unnamedControls(page: Page) {

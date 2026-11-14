@@ -83,10 +83,25 @@ export default function DestinationPage() {
       >
         Hear location
       </button>
-      <div className="rounded-[24px] border-[3px] border-dashed border-(--s-border) px-[1.1em] py-[1em] text-[1em]">
-        <strong className="block text-[1.05em]">Guided scan and directions: Phase 3</strong>
-        Camera location scan and step-by-step directions are not built yet. Until then, ask staff for help or hear the shelf location above.
-      </div>
+      {s.guide.online === false ? (
+        <div className="rounded-[24px] border-[3px] border-dashed border-(--s-border) px-[1.1em] py-[1em] text-[1em]">
+          <strong className="block text-[1.05em]">Step-by-step directions are offline</strong>
+          The voice assistant is not available right now. Ask staff for help, or hear the shelf location above.
+        </div>
+      ) : (
+        <button
+          type="button"
+          aria-disabled={s.guide.busy || undefined}
+          onClick={() => {
+            if (s.guide.busy) return;
+            s.resetGuide();
+            void s.ask(`Take me to ${[p.brand, p.name, p.size].filter(Boolean).join(" ")}`);
+          }}
+          className={`${sBtn.primary} px-4 text-[1.15em]`}
+        >
+          {s.guide.busy ? "Starting directions…" : "Get directions"}
+        </button>
+      )}
       <button type="button" onClick={() => s.aux("/shopper/help")} className={`${sBtn.secondary} px-4 text-[1.15em]`}>Get Help</button>
     </>
   );

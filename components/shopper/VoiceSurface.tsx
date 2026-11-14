@@ -1,6 +1,6 @@
 "use client";
 // Voice surface: a single full-width <button> (no other controls inside). Recording only starts on a tap,
-// announces "Listening." and 'Heard "…".', then runs the normal search. States: idle, listening, processing,
+// announces "Listening." and 'Heard "…".', then asks the shopper agent (plain search when the agent is offline). States: idle, listening, processing,
 // error, denied, unsupported. The status line below is referenced by aria-describedby.
 import { useEffect, useRef, useState } from "react";
 import { Mic } from "lucide-react";
@@ -32,8 +32,8 @@ interface Rec {
 }
 type RecCtor = new () => Rec;
 
-export function VoiceSurface({ onUnsupported }: { onUnsupported: () => void }) {
-  const { t, setMsg, setQ, runSearch } = useShopper();
+export function VoiceSurface({ onUnsupported, compact = false, disabled = false }: { onUnsupported: () => void; compact?: boolean; disabled?: boolean }) {
+  const { t, setMsg, setQ, ask } = useShopper();
   const [state, setState] = useState<MicState>("idle");
   const rec = useRef<Rec | null>(null);
   const stateRef = useRef(state);
@@ -51,7 +51,7 @@ export function VoiceSurface({ onUnsupported }: { onUnsupported: () => void }) {
       setMsg("Stopped listening.");
       return;
     }
-    if (state === "processing") return;
+    if (state === "processing" || disabled) return;
     const w = window as unknown as { SpeechRecognition?: RecCtor; webkitSpeechRecognition?: RecCtor };
     const SR = w.SpeechRecognition || w.webkitSpeechRecognition;
     if (!SR) {
@@ -81,7 +81,7 @@ export function VoiceSurface({ onUnsupported }: { onUnsupported: () => void }) {
       setQ(text);
       setState("idle");
       setMsg(`Heard “${text}”.`);
-      void runSearch(text);
+      void ask(text);
     };
     r.onerror = (e) => {
       if (e.error === "not-allowed" || e.error === "service-not-allowed") {
@@ -118,7 +118,8 @@ export function VoiceSurface({ onUnsupported }: { onUnsupported: () => void }) {
       aria-pressed={state === "listening"}
       aria-label={m.aria}
       aria-describedby="mic-status"
-      className="flex min-h-[340px] w-full flex-col items-center justify-center gap-4 rounded-[40px] border-4 px-5 py-7"
+      aria-disabled={disabled || undefined}
+      className={`flex ${compact ? "min-h-[180px]" : "min-h-[340px]"} w-full flex-col items-center justify-center gap-4 rounded-[40px] border-4 px-5 py-7`}
       style={{
         background: active ? t.text : bad ? t.surface : t.primary,
         color: active ? t.bg : bad ? t.text : t.onPrimary,

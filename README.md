@@ -13,7 +13,7 @@ npm run test:e2e             # Playwright: v4 handoff scenarios + accessibility 
 PW_CHANNEL=chrome npm run test:e2e   # same, using an installed Google Chrome
 ```
 
-Open `/shopper` (voice-first shopper app) or `/business` (store manager: Home, Floor Plan, Review, More).
+Open `/shopper` (voice-first shopper app; spoken requests go to the shopper agent on `/shopper/guide`, typed search stays plain search) or `/business` (store manager: Home, Floor Plan, Review, More).
 
 Try the API:
 

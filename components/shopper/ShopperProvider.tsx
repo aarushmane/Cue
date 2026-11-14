@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AISLE_NAMES, DEMO_STORE } from "@/lib/seed/demo-store";
 import type { PublishedProduct } from "@/lib/types";
+import { postTurn, prefsPatch, toNavPrefs, type GuideNav, type GuideReply, type GuideTurn } from "./guide";
 
 export type Contrast = "comfortable" | "dark" | "light";
 export type Contribution = "allowed" | "declined" | null;
@@ -41,7 +42,7 @@ interface ShopperCtx {
   setPrefs: (p: Partial<Prefs>) => void;
   t: Theme;
   live: string;
-  say: (text: string) => void;
+  say: (text: string, rate?: number) => void;
   msg: { text: string; err: boolean };
   setMsg: (text: string, err?: boolean) => void;
   q: string;
@@ -60,7 +61,31 @@ interface ShopperCtx {
   back: () => void;
   focusSearch: boolean;
   setFocusSearch: (v: boolean) => void;
+  /** Shopper agent conversation (POST /api/agent/shopper). `online` is null until the first turn. */
+  guide: GuideView;
+  /** Voice entry point: sends the utterance to the agent; falls back to plain search when the agent is offline. */
+  ask: (text: string) => Promise<void>;
+  /** One agent turn (utterance and/or scan result). Returns false when it failed. */
+  sendTurn: (turn: GuideTurn) => Promise<boolean>;
+  resetGuide: () => void;
 }
+
+export interface GuideView {
+  online: boolean | null;
+  busy: boolean;
+  nav: GuideNav;
+  say: string;
+  agentText: string;
+  routeText: string[];
+  choices: string[];
+  /** What the shopper said last, shown above the reply. */
+  heard: string;
+  error: string;
+}
+
+const freshGuide = (): GuideView => ({
+  online: null, busy: false, nav: { store_id: STORE_ID }, say: "", agentText: "", routeText: [], choices: [], heard: "", error: "",
+});
 
 const Ctx = createContext<ShopperCtx | null>(null);
 export function useShopper(): ShopperCtx {
@@ -93,6 +118,11 @@ export function ShopperProvider({ children }: { children: ReactNode }) {
   const [from, setFrom] = useState<"search" | "results">("search");
   const [prev, setPrev] = useState("/shopper");
   const [focusSearch, setFocusSearch] = useState(false);
+  const [guide, setGuide] = useState<GuideView>(freshGuide);
+  // Latest nav/history for the next request, independent of render timing; `busy` blocks overlapping turns.
+  const guideRef = useRef<{ nav: GuideNav; history: unknown[]; busy: boolean; online: boolean | null }>({
+    nav: { store_id: STORE_ID }, history: [], busy: false, online: null,
+  });
   const prefsRef = useRef(prefs);
   useEffect(() => {
     prefsRef.current = prefs;
@@ -123,14 +153,14 @@ export function ShopperProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const say = useCallback((text: string) => {
+  const say = useCallback((text: string, rateOverride?: number) => {
     setLive(text);
     const { speak, rate } = prefsRef.current;
     if (!speak || typeof window === "undefined" || !window.speechSynthesis) return;
     try {
       speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(text);
-      u.rate = rate;
+      u.rate = rateOverride ?? rate;
       speechSynthesis.speak(u);
     } catch {}
   }, []);
@@ -200,6 +230,67 @@ export function ShopperProvider({ children }: { children: ReactNode }) {
     }
   }, [selected]);
 
+  const sendTurn = useCallback(
+    async (turn: GuideTurn): Promise<boolean> => {
+      const g = guideRef.current;
+      if (g.busy) return false;
+      g.busy = true;
+      const sentPrefs = toNavPrefs(prefsRef.current);
+      const nav: GuideNav = { ...g.nav, prefs: sentPrefs };
+      setGuide((v) => ({ ...v, busy: true, error: "", heard: turn.utterance ?? (turn.scan ? "Scan finished." : v.heard) }));
+      const res = await postTurn(nav, g.history, turn);
+      g.busy = false;
+      if (!res.ok) {
+        if (res.offline) g.online = false;
+        setGuide((v) => ({ ...v, busy: false, online: res.offline ? false : v.online, error: res.say }));
+        if (!res.offline) say(res.say);
+        return false;
+      }
+      const reply: GuideReply = res.reply;
+      g.nav = reply.nav;
+      g.history = reply.history;
+      g.online = true;
+      const patch = prefsPatch(sentPrefs, reply.nav.prefs);
+      if (patch) setPrefs(patch);
+      setGuide((v) => ({
+        ...v, online: true, busy: false, nav: reply.nav, say: reply.say, agentText: reply.agent_text,
+        routeText: reply.route_text, choices: reply.choices, error: "",
+      }));
+      say(reply.say, reply.nav.prefs?.speech_rate);
+      return true;
+    },
+    [say, setPrefs],
+  );
+
+  const ask = useCallback(
+    async (text: string) => {
+      const utterance = text.trim();
+      if (!utterance) {
+        setMsg("Type or say a product first.", true);
+        return;
+      }
+      // A function, not a narrowed property read: sendTurn changes `online` while we await it.
+      const offline = () => guideRef.current.online === false;
+      if (!offline()) {
+        if (await sendTurn({ utterance })) {
+          if (path !== "/shopper/guide") router.push("/shopper/guide");
+          return;
+        }
+        // One-off failure on the guide screen: the error is already shown and spoken there.
+        if (!offline() && path === "/shopper/guide") return;
+      }
+      // Agent offline (no API key) or unreachable from the search screen: plain search still works.
+      await runSearch(utterance);
+    },
+    [path, router, runSearch, sendTurn, setMsg],
+  );
+
+  const resetGuide = useCallback(() => {
+    const online = guideRef.current.online;
+    guideRef.current = { nav: { store_id: STORE_ID }, history: [], busy: false, online };
+    setGuide({ ...freshGuide(), online });
+  }, []);
+
   const aux = useCallback(
     (target: string) => {
       if (!AUX.includes(path)) setPrev(path);
@@ -212,9 +303,9 @@ export function ShopperProvider({ children }: { children: ReactNode }) {
   const value = useMemo<ShopperCtx>(
     () => ({
       prefs, setPrefs, t: THEMES[prefs.contrast], live, say, msg, setMsg, q, setQ, results, resQuery, selected, selectedLoc, setSelectedLoc,
-      from, runSearch, select, refreshSelected, aux, back, focusSearch, setFocusSearch,
+      from, runSearch, select, refreshSelected, aux, back, focusSearch, setFocusSearch, guide, ask, sendTurn, resetGuide,
     }),
-    [prefs, setPrefs, live, say, msg, setMsg, q, results, resQuery, selected, selectedLoc, from, runSearch, select, refreshSelected, aux, back, focusSearch],
+    [prefs, setPrefs, live, say, msg, setMsg, q, results, resQuery, selected, selectedLoc, from, runSearch, select, refreshSelected, aux, back, focusSearch, guide, ask, sendTurn, resetGuide],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
