@@ -35,12 +35,22 @@ export function PositionScan() {
   const [note, setNote] = useState("");
   const video = useRef<HTMLVideoElement>(null);
   const stream = useRef<MediaStream | null>(null);
+  // False once the shopper leaves the screen: an in-progress scan must stop capturing and must not upload.
+  const alive = useRef(true);
+  const upload = useRef<AbortController | null>(null);
 
   const stop = () => {
     stream.current?.getTracks().forEach((t) => t.stop());
     stream.current = null;
   };
-  useEffect(() => stop, []);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      upload.current?.abort();
+      stop();
+    };
+  }, []);
 
   const finish = async (scan: LocalizeResult) => {
     setPhase("sending");
@@ -59,13 +69,20 @@ export function PositionScan() {
     try {
       setPhase("camera");
       s.say("Scanning. Slowly pan your phone left to right.");
-      stream.current = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+      const media = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+      // Left the screen while the permission prompt was open: turn the camera straight back off.
+      if (!alive.current) {
+        media.getTracks().forEach((t) => t.stop());
+        return;
+      }
+      stream.current = media;
       const v = video.current!;
       v.srcObject = stream.current;
       await v.play();
       const frames: string[] = [];
       for (let i = 0; i < FRAMES; i++) {
         await new Promise((r) => setTimeout(r, i === 0 ? 300 : GAP_MS));
+        if (!alive.current) return; // unmount already stopped the tracks; capture nothing more, send nothing
         const f = grab(v);
         if (f) frames.push(f);
       }
@@ -73,8 +90,10 @@ export function PositionScan() {
       v.srcObject = null;
       if (!frames.length) throw new Error("no frames");
       setPhase("sending");
+      upload.current = new AbortController();
       const r = await fetch("/api/localize", {
         method: "POST",
+        signal: upload.current.signal,
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           store_id: STORE_ID,
@@ -84,6 +103,7 @@ export function PositionScan() {
         }),
       });
       const body = (await r.json().catch(() => null)) as LocalizeResult | null;
+      if (!alive.current) return;
       if (r.status === 503) {
         setPhase("error");
         setNote("Camera position finding is not set up on this server. Say where you are, or ask staff for help.");
@@ -94,6 +114,7 @@ export function PositionScan() {
       await finish(body);
     } catch (e) {
       stop();
+      if (!alive.current) return; // aborted because the shopper left: nothing to report
       const denied = e instanceof DOMException && (e.name === "NotAllowedError" || e.name === "SecurityError");
       setPhase("error");
       const text = denied
