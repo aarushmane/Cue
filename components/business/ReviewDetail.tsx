@@ -4,7 +4,10 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
-import { reviewObservationDemo, saveReviewDraftDemo } from "@/lib/demo/adapter";
+import type { ApiResult } from "@/lib/api/client";
+// "Save details" has no API route yet, so it stays on the demo adapter.
+import { saveReviewDraftDemo } from "@/lib/demo/adapter";
+import { reviewObservation, type ReviewOk } from "@/lib/staff/client";
 import { regionOf } from "@/lib/map/graph";
 import {
   brandSize, candStr, fmt, LEVELS, locLong, locLongOf, locShort, norm, SHELF_CATALOG, shelfOf, SRC, titleOf,
@@ -15,10 +18,16 @@ import { AISLE_NAMES, CATEGORIES } from "@/lib/seed/demo-store";
 import type { Observation, ReviewAction, ReviewDraft, ShelfLevel } from "@/lib/types";
 import { useSnap, useStaff } from "./StaffProvider";
 import {
-  BackLink, Button, CheckRow, Checklist, controlClass, cx, DemoTag, Field, H2, PhotoSlot, Select, Sheet,
+  BackLink, Button, CheckRow, Checklist, controlClass, cx, Field, H2, PhotoSlot, Select, Sheet,
 } from "./ui";
 
 type SheetKind = "confirm" | "reject" | "rescan" | "merge" | null;
+
+// Demo toggle (More → Demo controls): fail before any request is sent, like a dropped request would.
+const SIMULATED_FAILURE = {
+  ok: false, status: 500, code: "FAILED",
+  error: "The request did not complete (simulated failure). Nothing was changed. You can try again.",
+} as const;
 type Cand = keyof Observation["candidate"];
 const LOC_KEYS: Cand[] = ["aisle", "shelf", "level"];
 
@@ -91,11 +100,13 @@ export function ReviewDetail({ id }: { id: string }) {
   const submit = (action: ReviewAction) =>
     start(async () => {
       setPubError(null);
-      const r = await reviewObservationDemo(
-        { action, observationId: o.id, obsVersion: d.obsVersion, draft: action === "publish" ? d : undefined, targetVersion: d.targetVersion, reason },
-        { simulateFailure: s.simulateFailure },
-      );
-      s.apply(r);
+      const r: ApiResult<ReviewOk> = s.simulateFailure
+        ? SIMULATED_FAILURE
+        : await reviewObservation(o.id, {
+            action, obs_version: d.obsVersion, draft: action === "publish" ? d : undefined, target_version: d.targetVersion, reason,
+          });
+      // The route returns no snapshot: re-read it, after failures too (a 409 means someone else's decision landed).
+      const fresh = await s.refresh();
       if (!r.ok) {
         // Another employee got there first: the snapshot now shows their decision; the banner explains it.
         if (r.code === "ALREADY_REVIEWED") {
@@ -111,10 +122,10 @@ export function ReviewDetail({ id }: { id: string }) {
       setReason("");
       // Active-route tracking is not available in the demo backend, so no route is ever flagged here.
       s.setNotice({ id: o.id, routeFlag: false });
-      const np = r.snapshot.products.find((p) => p.id === r.productId);
+      const np = fresh?.products.find((p) => p.id === r.product_id);
       s.toast(
         action === "publish" && np
-          ? `Published ${np.name}. ${r.isNew ? "Added to" : "Updated in"} Published Inventory.`
+          ? `Published ${np.name}. ${r.is_new ? "Added to" : "Updated in"} Published Inventory.`
           : action === "reject" ? `${o.id} rejected. Inventory unchanged.` : `${o.id} set to NEEDS_RESCAN. Inventory unchanged.`,
       );
     });
@@ -132,24 +143,24 @@ export function ReviewDetail({ id }: { id: string }) {
     });
 
   // ── Outcome banner (live region) ──
-  let banner: { title: string; body: string; extra?: string; demo: boolean; tone: "ok" | "warn" | "plain" } | null = null;
+  let banner: { title: string; body: string; extra?: string; tone: "ok" | "warn" | "plain" } | null = null;
   if ((o.status === "ACCEPTED" || o.status === "EDITED") && mine && prod) {
     banner = {
-      title: "✓ Successfully published", tone: "ok", demo: true,
+      title: "✓ Successfully published", tone: "ok",
       body: `${prod.name} is verified at ${locLong(prod)}. ${o.isNew ? "Added to" : "Updated in"} Published Inventory, removed from Pending and recorded in Activity. Shopper search and new routes use this location.`,
       extra: notice?.routeFlag ? "! 1 active shopper route used the old location and is flagged for route revalidation." : "",
     };
   } else if (o.status === "ACCEPTED" || o.status === "EDITED") {
     banner = {
-      title: "! Already reviewed by another employee", tone: "warn", demo: false,
+      title: "! Already reviewed by another employee", tone: "warn",
       body: `${o.reviewedBy} approved this observation ${fmt(o.reviewedAt)}. Your edits were not published.`,
     };
   } else if (o.status === "REJECTED") {
-    banner = { title: "✕ Observation rejected", tone: "plain", demo: mine, body: `Reason: ${o.reason}. Official inventory was not changed.` };
+    banner = { title: "✕ Observation rejected", tone: "plain", body: `Reason: ${o.reason}. Official inventory was not changed.` };
   } else if (o.status === "NEEDS_RESCAN") {
-    banner = { title: "↻ Rescan requested", tone: "plain", demo: mine, body: `Status: NEEDS_RESCAN. Missing evidence: ${o.reason}. Official inventory was not changed.` };
+    banner = { title: "↻ Rescan requested", tone: "plain", body: `Status: NEEDS_RESCAN. Missing evidence: ${o.reason}. Official inventory was not changed.` };
   } else if (pubError && !sheet) {
-    banner = { title: "! Publishing failed", tone: "warn", demo: false, body: pubError };
+    banner = { title: "! Publishing failed", tone: "warn", body: pubError };
   }
 
   const portal = (node: React.ReactNode) => (s.sheetHost ? createPortal(node, s.sheetHost) : null);
@@ -179,7 +190,6 @@ export function ReviewDetail({ id }: { id: string }) {
             <strong className="text-base">{banner.title}</strong>
             <span className="text-[15px] leading-[1.45]">{banner.body}</span>
             {banner.extra && <span className="text-sm leading-[1.4] font-bold">{banner.extra}</span>}
-            {banner.demo && <DemoTag tone="ivory" />}
           </div>
         )}
       </div>
@@ -412,7 +422,6 @@ export function ReviewDetail({ id }: { id: string }) {
       {sheet === "confirm" && sh && portal(
         <Sheet labelledBy="rcf-h" onClose={closeSheet} maxH="88%">
           <h2 id="rcf-h" className="m-0 font-display text-2xl font-normal text-indigo">Publish to inventory?</h2>
-          <DemoTag />
           <div className="rounded-[22px] bg-lavender px-4 py-3.5">
             <span className="block text-[13px] font-bold tracking-[.04em] text-muted">✓ VERIFIED PRODUCT</span>
             <span className="mt-0.5 block text-lg font-bold text-indigo">{d.name}</span>
@@ -557,7 +566,7 @@ function ReasonSheet({
           className="resize-y rounded-[22px] border-2 border-control bg-ivory px-[18px] py-3.5 text-base font-normal text-charcoal"
         />
       </label>
-      <p id="rr-hint" className="m-0 text-sm text-muted">At least 5 characters. Demo action · local demo state only.</p>
+      <p id="rr-hint" className="m-0 text-sm text-muted">At least 5 characters.</p>
       {busy && <p role="status" className="m-0 text-[15px] font-semibold">Saving decision…</p>}
       {error && <p role="alert" className="m-0 rounded-[22px] border-2 border-gold bg-warn px-4 py-3.5 text-[15px]">{error}</p>}
       <div className="flex gap-2.5">

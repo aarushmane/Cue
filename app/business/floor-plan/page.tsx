@@ -2,7 +2,7 @@
 // Floor plan: View published / Edit draft. Shoppers and approvals keep using the published version until publish.
 import { useTransition, type ChangeEvent } from "react";
 import { Upload } from "lucide-react";
-import { publishMapDemo, saveMapDraftDemo } from "@/lib/demo/adapter";
+import { publishMap, saveMapDraft } from "@/lib/staff/client";
 import { cloneMap, KIND_TXT, mapChecks, regionOf, routeTo } from "@/lib/map/graph";
 import { fmt, norm, SHELF_CATALOG, shelfOf } from "@/lib/review/format";
 import { AISLE_NAMES } from "@/lib/seed/demo-store";
@@ -12,7 +12,7 @@ import { isPdfName, readPlanFile } from "@/components/map/planFile";
 import { useSnap, useStaff, type FloorPlanUi, withSnap } from "@/components/business/StaffProvider";
 import { pendingAt, pendingObs, plural, productsAt } from "@/components/business/derive";
 import {
-  AlertDialog, Button, CheckRow, Checklist, controlClass, cx, DemoTag, Field, H2, Pill, Select,
+  AlertDialog, Button, CheckRow, Checklist, controlClass, cx, Field, H2, Pill, Select,
 } from "@/components/business/ui";
 
 const TOOLS: [FloorPlanUi["tool"], string][] = [
@@ -133,8 +133,9 @@ function FloorPlanPage() {
   const save = () =>
     start(async () => {
       if (!fp.draft) return;
-      const r = await saveMapDraftDemo(pub.mapId, fp.draft);
-      s.apply(r);
+      // PUT /api/maps/:id/graph returns no snapshot: re-read it so "Draft saved <time>" is current.
+      const r = await saveMapDraft(pub.mapId, fp.draft);
+      await s.refresh();
       if (!r.ok) return s.toast(r.error);
       setFp({ dirty: false });
       s.toast(`Draft saved. Shoppers still use published v${pub.version}.`);
@@ -143,8 +144,9 @@ function FloorPlanPage() {
   const publish = () =>
     start(async () => {
       if (!fp.draft) return;
-      const r = await publishMapDemo(pub.mapId, fp.draft);
-      s.apply(r);
+      // PUT the draft, then POST /api/maps/:id/publish (the server re-runs the checklist), then re-read the snapshot.
+      const r = await publishMap(pub.mapId, fp.draft);
+      await s.refresh();
       if (!r.ok) {
         setFp({ confirm: false });
         return s.toast(r.failing?.length ? `${r.error} ${r.failing.join("; ")}.` : r.error);
@@ -344,7 +346,6 @@ function FloorPlanPage() {
               {snap.maps.draftSavedAt ? `Draft saved ${fmt(snap.maps.draftSavedAt)}${fp.dirty ? ", with unsaved changes since" : ""}. ` : "Draft not saved yet. "}
               Shoppers and approvals use published v{pub.version} until you publish.
             </p>
-            <DemoTag />
           </section>
         </>
       )}
@@ -396,7 +397,6 @@ function FloorPlanPage() {
           <p id="fpc-b" className="m-0 text-[15px] leading-normal">
             Replaces v{pub.version} for shopper routes and employee approvals. {fp.draft.shelves.length} shelves, {fp.draft.nodes.length} walkable points and {fp.draft.edges.length} connections. Product locations keep their shelf IDs.
           </p>
-          <DemoTag />
           <div className="mt-1.5 flex gap-2.5">
             <Button variant="dark" className="flex-1 px-2" disabled={busy} onClick={() => setFp({ confirm: false })}>Cancel</Button>
             <Button className="flex-1 px-2" disabled={busy} onClick={publish}>{busy ? "Publishing…" : "Publish"}</Button>

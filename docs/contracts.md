@@ -104,16 +104,33 @@ Multipart `store_id`, `shelf_id`, and `file`. Returns `{ media_id, url }`. Video
   observation `version` matches (409) → re-run `validate()` for publish (422 with failing labels) → merge target
   `version` matches (409) → one transaction.
 
-Until this route exists, the UI calls the in-memory demo adapter in `lib/demo/adapter.ts`
-(`reviewObservationDemo`), which implements this order against `lib/db/demoState.ts` and is labelled
-"Demo action" on screen. The database change it needs is drafted, **not applied**, in
-`docs/proposals/002_needs_rescan.sql`.
+**Built** (`app/api/observations/[id]/review/route.ts`, `lib/staff/service.ts`). Body:
+`{ action: "publish"|"accept"|"edit"|"reject"|"rescan", obs_version, draft?: ReviewDraft, target_version?, reason? }`.
+Success (both modes): `{ observation_id, status, product_id: string|null, is_new: boolean }`. Errors: `{ code, error, failing? }`.
+A merge (`draft.match` = a product id) without a target version is a 409 `TARGET_CONFLICT`.
+Supabase mode calls `review_observation()` from `supabase/migrations/004_review_v4.sql` (one transaction; the server
+re-checks the reviewer's identity/location confirmations, and the DB enforces shelf, level and same-store rules;
+the full `validate()` checklist runs only in memory mode for now). Memory mode runs `lib/db/demoState.ts` with the
+seeded staff member. The manager screens call it through `staffFetch` (`lib/staff/client.ts`) and re-read the
+snapshot afterwards, since the route doesn't return one.
 
-### `PATCH /api/products/:id/location` (staff)
-`{ shelf_id, level }` → `{ location }`. Uses the `move_product` SQL function. Requests without staff auth get 401 or 403 (test P01).
+### `PATCH /api/products/:id/location` (staff) — built
+`{ shelf_id, level, expected_version? }` → `{ location: { product_id, shelf_id, level }, version }` (both modes). 422 if the shelf is not on the store's published map. Supabase: `move_product_checked()` (version check +
+`move_product` in one transaction; 409 on a stale version). Requests without staff auth get 401 or 403 (test P01).
 
-### `PUT /api/maps/:id/graph` (staff)
-`{ nodes: MapNode[], edges: MapEdge[], shelves: Shelf[] }`. Only drafts can be edited. Publishing creates a new version and marks the old one `SUPERSEDED`.
+**Staff auth for these routes.** Supabase mode: `Authorization: Bearer <access token>` (sent by `staffFetch` after
+staff sign-in) and a `store_staff` row for the resource's store. Memory mode (no sign-in exists): `Bearer
+$STAFF_DEMO_TOKEN`, or no `Authorization` header from a same-origin browser page (the manager app itself; the same
+cross-site protection Next gives Server Functions). Anything else is 401.
+
+### `PUT /api/maps/:id/graph` and `POST /api/maps/:id/publish` (staff) — built for memory mode
+`PUT` takes the editor's `FloorPlan` (nodes, edges, shelves, landmarks) and saves it as the draft. `POST …/publish`
+re-runs `mapChecks()` (422 with failing labels) and publishes the draft as the next version; the old one is superseded.
+Supabase mode returns 501 until the editor's shelf rectangles and landmarks are mapped to tables.
+
+### `POST /api/observations` (shopper) — built
+`{ store_id, consent: "allowed", confidence, evidence, candidate }` → `{ id, merged, message }`. Structured text only.
+403 `NO_CONSENT` without consent. An identical pending observation (brand + name + shelf) gains a sighting instead.
 
 ### `POST /api/speech`
 `{ text }` → `audio/mpeg`, or 503 when ElevenLabs isn't configured. The client then falls back to `speechSynthesis`.
