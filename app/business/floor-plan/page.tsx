@@ -298,6 +298,7 @@ function FloorPlanPage() {
                       type="text"
                       value={selLm.label}
                       placeholder="e.g. Pharmacy sign"
+                      maxLength={300} // same cap as the server schema (lib/demo adapter); landmark descriptions are long
                       onChange={(e) => patch((d) => { d.landmarks.find((x) => x.id === selLm.id)!.label = e.target.value; })}
                       className={controlClass}
                     />
