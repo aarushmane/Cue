@@ -19,6 +19,13 @@ const ok = (s: string) => console.log(`  ✅ ${s}`);
 const warn = (s: string) => console.log(`  ⚠️  ${s}`);
 const bad = (s: string) => console.log(`  ❌ ${s}`);
 const todo: string[] = [];
+// Print only fixed diagnostic categories: upstream errors can contain signed URLs or credentials.
+const safeError = (e: unknown) => {
+  const message = e instanceof Error ? e.message : "";
+  if (/^HTTP \d{3}( \(key rejected\))?$/.test(message)) return message;
+  if (message === "GraphQL query rejected (check field access/schema)") return message;
+  return "request failed (check credentials, network, and API schema)";
+};
 
 console.log("\n1. Keys in .env.local");
 const keys = [
@@ -64,12 +71,12 @@ async function matterport<T>(query: string, variables: Record<string, unknown>):
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}${res.status === 401 || res.status === 403 ? " (key rejected)" : ""}`);
   const body = (await res.json()) as { data?: T; errors?: { message: string }[] };
-  if (body.errors?.length) throw new Error(body.errors[0].message);
+  if (body.errors?.length) throw new Error("GraphQL query rejected (check field access/schema)");
   return body.data as T;
 }
 
 type Loc = { id: string; neighbors?: string[] | null; floor?: { id: string } | null };
-type Plan = { format?: string; flags?: string[]; resolution?: number; origin?: { x: number; y: number } | null };
+type Plan = { url?: string; width?: number; height?: number; format?: string; flags?: string[]; resolution?: number; origin?: { x: number; y: number } | null };
 
 console.log("\n3–4. Matterport: navigation neighbors and floor plans");
 if (!env("MATTERPORT_API_KEY") || !env("MATTERPORT_API_TOKEN")) {
@@ -91,24 +98,24 @@ if (!env("MATTERPORT_API_KEY") || !env("MATTERPORT_API_TOKEN")) {
         todo.push(`Mention proximity-edge fallback for ${m.label} in the pitch`);
       }
     } catch (e) {
-      bad(`${m.label}: ${e instanceof Error ? e.message : e}`);
+      bad(`${m.label}: ${safeError(e)}`);
       todo.push(`Fix Matterport access for ${m.sid}`);
-      continue;
     }
     try {
       const d = await matterport<{ model: { assets: { floorplans: Plan[] } } }>(
-        `query P($id: ID!) { model(id: $id) { assets { floorplans(provider: "matterport") { format flags resolution origin { x y } } } } }`,
+        `query P($id: ID!) { model(id: $id) { assets { floorplans(provider: "matterport") { format flags url width height resolution origin { x y } } } } }`,
         { id: m.sid },
       );
       const plans = d.model?.assets?.floorplans ?? [];
-      const usable = plans.filter((p) => p.format === "jpg" && (p.flags ?? []).join() === "photogramy" && p.resolution && p.origin);
+      const usable = plans.filter((p) => p.format?.toLowerCase() === "jpg" && (p.flags ?? []).includes("photogramy") && p.url && (p.width ?? 0) > 0 && (p.height ?? 0) > 0 && (p.resolution ?? 0) > 0 && p.origin?.x != null && p.origin?.y != null);
       if (usable.length) ok(`${m.label}: ${usable.length} georeferenced floor plan image(s)`);
       else {
         warn(`${m.label}: no georeferenced floor plan (${plans.length} plan assets) → the graph draws without a background`);
         todo.push(`No plan image for ${m.label}: screenshot the graph alone or overlay manually`);
       }
     } catch (e) {
-      warn(`${m.label}: floor plan query failed (${e instanceof Error ? e.message : e})`);
+      warn(`${m.label}: floor plan query failed (${safeError(e)})`);
+      todo.push(`Verify floor plan for ${m.sid}; use graph-only screenshot until confirmed`);
     }
   }
 }
@@ -133,14 +140,18 @@ if (!env("VEXCEL_API_KEY")) {
         }),
         signal: AbortSignal.timeout(60_000),
       });
-      if (res.ok) ok(`${m.label}: ortho available`);
-      else if (res.status === 403) warn(`${m.label}: outside Vexcel coverage (403)`);
+      if (res.ok && /^image\/(jpeg|png|webp)(;|$)/i.test(res.headers.get("content-type") ?? "") && (await res.arrayBuffer()).byteLength > 0) ok(`${m.label}: ortho available`);
+      else if (res.status === 403) {
+        warn(`${m.label}: Vexcel denied the request (403: check coverage AND key permissions)`);
+        todo.push(`Confirm Vexcel coverage/permissions for ${m.sid}; staff must inspect the approach in person`);
+      }
       else {
-        bad(`${m.label}: Vexcel HTTP ${res.status}`);
+        bad(`${m.label}: Vexcel HTTP ${res.status} (no usable image)`);
         todo.push("Fix Vexcel access");
       }
     } catch (e) {
-      bad(`${m.label}: ${e instanceof Error ? e.message : e}`);
+      bad(`${m.label}: ${safeError(e)}`);
+      todo.push(`Verify Vexcel access for ${m.sid}; staff must inspect the approach in person`);
     }
   }
 }
@@ -153,3 +164,6 @@ else {
 }
 
 console.log(todo.length ? `\nTo do:\n${todo.map((t) => `  - ${t}`).join("\n")}\n` : "\nAll checks passed.\n");
+
+// Default mode is advisory; CI can explicitly require every live check to be ready.
+if (process.argv.includes("--strict") && todo.length) process.exitCode = 1;
