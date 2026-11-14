@@ -3,6 +3,7 @@
 // → landmark references → shelf suggestions (subagent) → saved draft for staff review.
 import { ChatAnthropic } from "@langchain/anthropic";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
+import { awaitAllCallbacks } from "@langchain/core/callbacks/promises";
 import { convertToOpenAITool } from "@langchain/core/utils/function_calling";
 import { createDeepAgent } from "deepagents";
 import { CLAUDE_MODEL } from "../../ai/claude";
@@ -42,6 +43,25 @@ class GeminiChat extends ChatGoogleGenerativeAI {
     });
     return super.bindTools(cleaned, kwargs);
   }
+}
+
+// Same env vars @langchain/core checks before attaching the LangSmith tracer.
+const tracingOn = () =>
+  ["LANGSMITH_TRACING_V2", "LANGCHAIN_TRACING_V2", "LANGSMITH_TRACING", "LANGCHAIN_TRACING"].some((k) => process.env[k] === "true");
+
+/**
+ * Serverless functions can freeze as soon as the response is sent, losing trace batches still in flight. Drain
+ * LangChain's callback queue and the LangSmith client's pending batches before returning, capped so a slow
+ * LangSmith never holds up the staff response for long. No-op (and no LangSmith client created) when tracing is off.
+ */
+async function flushTraces(timeoutMs = 10_000) {
+  if (!tracingOn()) return;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([
+    awaitAllCallbacks().catch(() => undefined),
+    new Promise<void>((resolve) => { timer = setTimeout(resolve, timeoutMs); }),
+  ]);
+  clearTimeout(timer);
 }
 
 export interface OnboardingResult {
@@ -84,7 +104,13 @@ export async function runOnboarding(propertyId: string, startedBy: string | null
   try {
     const result = await agent.invoke(
       { messages: [{ role: "user", content: `Onboard CoStar property ${propertyId}.` }] },
-      { recursionLimit: 60 },
+      {
+        recursionLimit: 60,
+        // LangSmith trace labels only (no effect on the agent). Never put secrets here: metadata is sent to LangSmith.
+        runName: `onboard ${propertyId}`,
+        tags: ["storeguide", "onboarding", layers.source],
+        metadata: { run_id: runId, property_id: propertyId },
+      },
     );
     const last = result.messages.at(-1);
     const report = typeof last?.content === "string" ? last.content : JSON.stringify(last?.content ?? "");
@@ -106,5 +132,7 @@ export async function runOnboarding(propertyId: string, startedBy: string | null
   } catch (err) {
     await finishAgentRun(runId, "FAILED", [], [...run.log, { at: new Date().toISOString(), event: "error", detail: String(err) }]);
     throw err;
+  } finally {
+    await flushTraces(); // failed runs are the ones judges most need to see, so flush on both paths
   }
 }

@@ -62,6 +62,25 @@ The import uses Matterport anchor locations (position, floor, room, **navigation
 
 Track strategy: `docs/tracks.md`.
 
+## Get a LangSmith trace
+
+The onboarding deep agent (`lib/agents/onboarding/agent.ts`) is traced end to end in LangSmith: the plan (`write_todos`), every tool call, the `shelf-recognizer` subagent and each model call.
+
+1. Create an API key at [smith.langchain.com](https://smith.langchain.com) (Settings → API Keys).
+2. Add to `.env.local` (never commit it) and restart `npm run dev`:
+   ```bash
+   LANGSMITH_TRACING=true
+   LANGSMITH_API_KEY=lsv2_...
+   LANGSMITH_PROJECT=storeguide   # optional; defaults to "default"
+   ```
+3. Run onboarding (the curl under [AI features](#ai-features)), then open the project in LangSmith.
+
+Each run is named `onboard <property id>`, tagged `storeguide`, `onboarding` and `costar` or `fixture`, and carries the metadata `run_id` (the same id as the `run_id` in the API response and, with Supabase, the `agent_runs` row) and `property_id`. To find a run, filter by tag or search the metadata for its `run_id`.
+
+On serverless hosts (Vercel), the function can be frozen as soon as the response is sent, which would drop the last trace batches. So `runOnboarding` calls `awaitAllCallbacks()` before it returns, on success and failure alike, with a 10 s cap so a slow LangSmith can't stall the response. Don't set `LANGCHAIN_CALLBACKS_BACKGROUND`: the flush already covers it, and setting it to `false` makes every agent step wait on LangSmith.
+
+Only the agent's own inputs and outputs are sent: the prompt, tool arguments and results, and the run labels above. API keys stay out of the trace because LangChain masks model secrets and the Matterport, Vexcel and Supabase credentials are only used inside tool code. To hide payloads entirely, also set `LANGSMITH_HIDE_INPUTS=true` and `LANGSMITH_HIDE_OUTPUTS=true`. Only the onboarding agent is traced. The shopper agent doesn't use LangChain.
+
 ## Supabase setup
 
 1. Create a project and copy its URL and anon key into `.env.local`.
