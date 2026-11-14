@@ -71,7 +71,8 @@ export default function GuidePage() {
           {g.busy ? "Thinking…" : g.agentText || g.say || "Tap below and say what you need, like “I need almond milk”."}
         </p>
         {g.error && !g.busy && (
-          <p role="alert" className="m-0 text-[1em] font-semibold" style={{ color: s.t.err }}>{g.error}</p>
+          // Not role="alert": sendTurn already announces the error through say() (live region + speech).
+          <p className="m-0 text-[1em] font-semibold" style={{ color: s.t.err }}>{g.error}</p>
         )}
         {g.say && !g.busy && (
           <button type="button" onClick={() => s.say(g.say, g.nav.prefs?.speech_rate)} className={`${sBtn.secondary} min-h-12 text-[1em]`}>

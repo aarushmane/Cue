@@ -32,7 +32,12 @@ function grab(video: HTMLVideoElement): string | null {
 export function PositionScan() {
   const s = useShopper();
   const [phase, setPhase] = useState<Phase>("idle");
-  const [note, setNote] = useState("");
+  const [note, setNoteState] = useState("");
+  // Shown on screen and announced once through say() (live region + speech), so the note has no role="alert".
+  const setNote = (text: string) => {
+    setNoteState(text);
+    if (text) s.say(text);
+  };
   const video = useRef<HTMLVideoElement>(null);
   const stream = useRef<MediaStream | null>(null);
   // False once the shopper leaves the screen: an in-progress scan must stop capturing and must not upload.
@@ -107,7 +112,6 @@ export function PositionScan() {
       if (r.status === 503) {
         setPhase("error");
         setNote("Camera position finding is not set up on this server. Say where you are, or ask staff for help.");
-        s.say("Camera position finding is not available. Say where you are, or ask staff for help.");
         return;
       }
       if (!body || typeof body.confidence_state !== "string") throw new Error("bad response");
@@ -121,7 +125,6 @@ export function PositionScan() {
         ? "Camera permission is off. Allow it in browser settings, or say where you are."
         : "The scan did not work. Try again, or say where you are.";
       setNote(text);
-      s.say(text);
     }
   };
 
@@ -154,7 +157,7 @@ export function PositionScan() {
         </button>
       )}
       {note && (
-        <p role="alert" className="m-0 text-[1em] font-semibold" style={{ color: s.t.err }}>
+        <p className="m-0 text-[1em] font-semibold" style={{ color: s.t.err }}>
           {note}
         </p>
       )}
