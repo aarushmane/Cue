@@ -212,8 +212,8 @@ export function OnboardScreen() {
               </div>
               <p className="m-0 rounded-[18px] bg-ivory px-3.5 py-2.5 text-[15px]">{v.aerial.notes}</p>
               <p className="m-0 text-sm text-muted">
-                Read from an overhead photo, not a site visit. Walk the approach from the street and confirm the entrance side, parking and
-                drop-off before publishing.
+                From the import&apos;s aerial check, not a site visit. Walk the approach from the street and confirm the entrance side, parking
+                and drop-off before publishing.
               </p>
             </section>
           )}
