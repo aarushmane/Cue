@@ -42,6 +42,10 @@ For localization, demo live in the venue room, which is controlled and reliable.
 - The ~15,000 models are mostly apartments and amenity spaces. Real retail interiors with enough scans: 337 S Broadway (CoStar 9560712, `6FNMVoyPrL1`) and 941 Towne Ave (`bP9oEnqmeie`). No grocery aisles exist in the set: demo the twin import on these, and the shopper flow on our seeded demo store.
 - The CoStar kit join is untested by the track team; our kit reader is best-effort.
 
+## Preflight
+
+`npm run check:costar` checks the keys, the models index rows, whether the Matterport key returns `locations.neighbors` for both retail models, whether each has a georeferenced floor plan, Vexcel coverage, and LangSmith tracing. It prints a to-do list and never prints key values.
+
 ## Remaining risks
 
 1. Does the hackathon key return `locations.neighbors`? (see above)
