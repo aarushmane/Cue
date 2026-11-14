@@ -42,6 +42,27 @@ do $$ begin
   raise notice 'ok  sightings counted, no media stored';
 end $$;
 
+-- Review fixes: a merge without a target version, draft-only shelves, unknown stores, sighting audit, merge audit.
+insert into store_maps (id, store_id, version, status) values ('map-draft-t', 'demo-store', 99, 'DRAFT');
+insert into nodes (id, map_id, x, y, kind, label) values ('N-DRAFT-T', 'map-draft-t', 0.5, 0.5, 'junction', 'draft');
+insert into shelves (id, map_id, aisle, section, anchor_node, x, y, w, h) values ('S-DRAFT-T', 'map-draft-t', '9', '9', 'N-DRAFT-T', 0.1, 0.1, 0.1, 0.1);
+insert into observations (id, store_id, source, candidate_json) values ('OBS-T4', 'demo-store', 'ai', '{"name":"Oatly"}');
+
+select pg_temp.eq(review_observation('OBS-T4', 'publish', 1, null, 't', null, '{"name":"Oatly Oat Milk"}', 'S-A1-1', 'top', 'P01', null),
+  'code', 'TARGET_CONFLICT', 'merge without a target version is a conflict');
+select pg_temp.eq(review_observation('OBS-T4', 'publish', 1, null, 't', null, '{"name":"Oatly"}', 'S-DRAFT-T', 'top'),
+  'code', 'INVALID', 'publish to a shelf that is only on a draft map');
+select pg_temp.eq(move_product_checked('P02', 'S-DRAFT-T', 'lower', null, null, 't'), 'code', 'INVALID', 'move to a draft-only shelf');
+select pg_temp.eq(submit_shopper_observation('no-such-store', '{"name":"x"}', 'Low', 'e'), 'code', 'NOT_FOUND', 'shopper submission to unknown store');
+do $$ begin
+  if (select count(*) from observations where id = 'OBS-T4' and review_status = 'NEEDS_REVIEW' and version = 1) <> 1 then raise exception 'FAIL refused reviews changed OBS-T4'; end if;
+  if not exists (select 1 from audit_events where action = 'observation.sighting' and (new_json->>'sightings')::int = 2) then raise exception 'FAIL sighting has no audit event'; end if;
+  if not exists (select 1 from audit_events where action = 'observation.approve' and entity_id = 'OBS-T3' and old_json->'product'->>'version' = '1') then
+    raise exception 'FAIL merge audit lacks the previous product fields';
+  end if;
+  raise notice 'ok  refused reviews write nothing; sighting and merge are audited';
+end $$;
+
 -- Mutation functions must not be callable with the anon/authenticated keys (PostgREST RPC).
 do $$ begin
   if has_function_privilege('anon', 'review_observation(text, text, int, uuid, text, text, jsonb, text, text, text, int, boolean)', 'execute')

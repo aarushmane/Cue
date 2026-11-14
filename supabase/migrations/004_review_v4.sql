@@ -38,6 +38,15 @@ create policy "staff read observations" on observations for select using (is_sto
 -- ───────────────────────────── products ─────────────────────────────
 alter table products add column if not exists version int not null default 1;
 
+-- ───────────────────────────── shelf_on_published_map ─────────────────────────────
+-- A location may only point at a shelf on the store's PUBLISHED map (a draft-only shelf has no route for shoppers).
+-- Mirrors the memory backend's "not placed on the published floor plan" check.
+create or replace function shelf_on_published_map(p_shelf_id text, p_store_id text) returns boolean
+language sql stable as $$
+  select exists (select 1 from shelves s join store_maps m on m.id = s.map_id
+                  where s.id = p_shelf_id and m.store_id = p_store_id and m.status = 'PUBLISHED')
+$$;
+
 -- ───────────────────────────── review_observation ─────────────────────────────
 -- p_action: 'publish' | 'reject' | 'rescan'.
 -- publish: p_target_product_id null = new product from p_fields; otherwise merge into that product (p_target_version
@@ -49,7 +58,7 @@ create or replace function review_observation(
   p_reason text default null, p_fields jsonb default null, p_shelf_id text default null, p_level text default null,
   p_target_product_id text default null, p_target_version int default null, p_edited boolean default false
 ) returns jsonb language plpgsql as $$
-declare o observations; t products; v_product text; v_status text; v_name text;
+declare o observations; t products; v_product text; v_status text; v_name text; v_old_product jsonb;
 begin
   select * into o from observations where id = p_observation_id for update;
   if not found then return jsonb_build_object('code', 'NOT_FOUND', 'error', 'Observation not found.'); end if;
@@ -78,6 +87,9 @@ begin
   if v_name is null or p_shelf_id is null then
     return jsonb_build_object('code', 'INVALID', 'error', 'A product name and shelf are required to publish.');
   end if;
+  if not shelf_on_published_map(p_shelf_id, o.store_id) then
+    return jsonb_build_object('code', 'INVALID', 'error', format('%s is not placed on this store''s published floor plan.', p_shelf_id));
+  end if;
 
   if p_target_product_id is null then
     insert into products (store_id, name, brand, variant, size, category, aliases)
@@ -89,9 +101,13 @@ begin
     if not found or t.store_id <> o.store_id then
       return jsonb_build_object('code', 'INVALID', 'error', 'The selected product is not in this store.');
     end if;
-    if t.version <> p_target_version then
+    -- A missing target version is a conflict, not a skipped check (`version <> null` is null, so it never fired).
+    if p_target_version is null or t.version <> p_target_version then
       return jsonb_build_object('code', 'TARGET_CONFLICT', 'error', format('%s was changed by another employee after you selected it. Review the current record and confirm again.', t.name));
     end if;
+    -- The merge overwrites the product's fields; keep the previous values in the approve event.
+    v_old_product := jsonb_build_object('name', t.name, 'brand', t.brand, 'variant', t.variant, 'size', t.size,
+                                        'category', t.category, 'version', t.version);
     update products set name = v_name, brand = nullif(trim(p_fields->>'brand'), ''), variant = nullif(trim(p_fields->>'variant'), ''),
       size = nullif(trim(p_fields->>'size'), ''), category = coalesce(nullif(trim(p_fields->>'category'), ''), category),
       aliases = (select array_agg(distinct a) from unnest(aliases || lower(v_name)) a), version = version + 1
@@ -107,39 +123,49 @@ begin
     version = version + 1 where id = o.id;
   insert into audit_events (store_id, actor_id, actor_label, action, entity, entity_id, old_json, new_json)
   values (o.store_id, p_actor, p_actor_label, 'observation.approve', 'observation', o.id,
-          jsonb_build_object('status', 'NEEDS_REVIEW'),
+          jsonb_build_object('status', 'NEEDS_REVIEW')
+            || case when v_old_product is null then '{}'::jsonb else jsonb_build_object('product', v_old_product) end,
           jsonb_build_object('status', v_status, 'product_id', v_product, 'new_product', p_target_product_id is null));
   return jsonb_build_object('code', 'OK', 'observation_id', o.id, 'product_id', v_product, 'status', v_status);
 end $$;
 
 -- ───────────────────────────── submit_shopper_observation ─────────────────────────────
 -- Structured text only (no media, no shopper identity). Same brand + name + shelf as a pending observation
--- adds a sighting instead of a duplicate. Returns { observation_id, merged }.
+-- adds a sighting instead of a duplicate. Returns { code: 'OK', observation_id, merged } or { code: 'NOT_FOUND', error }.
 create or replace function submit_shopper_observation(
   p_store_id text, p_candidate jsonb, p_confidence text, p_evidence text
 ) returns jsonb language plpgsql as $$
 declare v_key text; v_id text;
 begin
+  if not exists (select 1 from stores where id = p_store_id) then
+    return jsonb_build_object('code', 'NOT_FOUND', 'error', 'Unknown store.');
+  end if;
   v_key := lower(trim(coalesce(p_candidate->>'brand', '') || ' ' || coalesce(p_candidate->>'name', ''))) || '|' || coalesce(p_candidate->>'shelf', '');
+  -- FOR UPDATE below locks nothing when no row matches yet, so two identical first submissions would both insert.
+  -- Serialize submissions of the same key per store for the rest of this transaction.
+  perform pg_advisory_xact_lock(hashtextextended(p_store_id || '|' || v_key, 0));
   select id into v_id from observations
    where store_id = p_store_id and review_status = 'NEEDS_REVIEW'
      and lower(trim(coalesce(candidate_json->>'brand', '') || ' ' || coalesce(candidate_json->>'name', ''))) || '|' || coalesce(candidate_json->>'shelf', '') = v_key
    order by created_at limit 1 for update;
   if v_id is not null then
     update observations set sightings = sightings + 1, evidence = left(p_evidence, 1000) where id = v_id;
-    return jsonb_build_object('observation_id', v_id, 'merged', true);
+    insert into audit_events (store_id, actor_label, action, entity, entity_id, new_json)
+    values (p_store_id, 'Shopper (anonymous, consented)', 'observation.sighting', 'observation', v_id,
+            jsonb_build_object('status', 'NEEDS_REVIEW', 'sightings', (select sightings from observations where id = v_id)));
+    return jsonb_build_object('code', 'OK', 'observation_id', v_id, 'merged', true);
   end if;
   insert into observations (store_id, source, candidate_json, confidence, evidence)
   values (p_store_id, 'shopper', p_candidate, p_confidence, left(p_evidence, 1000))
   returning id into v_id;
   insert into audit_events (store_id, actor_label, action, entity, entity_id, new_json)
   values (p_store_id, 'Shopper (anonymous, consented)', 'observation.submit', 'observation', v_id, jsonb_build_object('status', 'NEEDS_REVIEW'));
-  return jsonb_build_object('observation_id', v_id, 'merged', false);
+  return jsonb_build_object('code', 'OK', 'observation_id', v_id, 'merged', false);
 end $$;
 
 -- ───────────────────────────── move_product_checked ─────────────────────────────
 -- PATCH /api/products/:id/location: optimistic version check + move_product in one transaction.
--- Returns { code: 'OK', version } or { code: 'NOT_FOUND' | 'CONFLICT', error }.
+-- Returns { code: 'OK', version } or { code: 'NOT_FOUND' | 'INVALID' | 'CONFLICT', error }.
 create or replace function move_product_checked(
   p_product_id text, p_shelf_id text, p_level text, p_expected_version int, p_actor uuid, p_actor_label text
 ) returns jsonb language plpgsql as $$
@@ -147,6 +173,9 @@ declare t products;
 begin
   select * into t from products where id = p_product_id for update;
   if not found then return jsonb_build_object('code', 'NOT_FOUND', 'error', 'Product not found.'); end if;
+  if not shelf_on_published_map(p_shelf_id, t.store_id) then
+    return jsonb_build_object('code', 'INVALID', 'error', format('%s is not placed on this store''s published floor plan.', p_shelf_id));
+  end if;
   if p_expected_version is not null and t.version <> p_expected_version then
     return jsonb_build_object('code', 'CONFLICT', 'error', format('%s was changed by another employee. Reopen it and try again.', t.name));
   end if;
@@ -158,9 +187,11 @@ end $$;
 -- ───────────────────────────── grants ─────────────────────────────
 -- Server-only (service role, after requireStaff in the route). Supabase exposes public functions over RPC with a
 -- default PUBLIC execute grant, so revoke it, as 003 does for its functions.
+revoke execute on function shelf_on_published_map(text, text) from public, anon, authenticated;
 revoke execute on function review_observation(text, text, int, uuid, text, text, jsonb, text, text, text, int, boolean) from public, anon, authenticated;
 revoke execute on function move_product_checked(text, text, text, int, uuid, text) from public, anon, authenticated;
 revoke execute on function submit_shopper_observation(text, jsonb, text, text) from public, anon, authenticated;
+grant execute on function shelf_on_published_map(text, text) to service_role;
 grant execute on function review_observation(text, text, int, uuid, text, text, jsonb, text, text, text, int, boolean) to service_role;
 grant execute on function move_product_checked(text, text, text, int, uuid, text) to service_role;
 grant execute on function submit_shopper_observation(text, jsonb, text, text) to service_role;

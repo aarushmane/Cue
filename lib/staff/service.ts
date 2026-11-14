@@ -6,7 +6,7 @@
 // Results are { status, body } so routes stay thin.
 import { getAdminDb } from "../db/admin";
 import {
-  listObservations, listProducts, moveProduct as memMove, publishMap as memPublishMap, reviewObservation as memReview,
+  getMaps, listObservations, listProducts, moveProduct as memMove, publishMap as memPublishMap, reviewObservation as memReview,
   saveMapDraft as memSaveMap, submitShopperObservation as memSubmit,
 } from "../db/demoState";
 import { DEMO_STAFF } from "../seed/demo-review";
@@ -25,7 +25,10 @@ const fromSql = (r: { code: string; error?: string } & Record<string, unknown>):
   r.code === "OK" ? { status: 200, body: r } : { status: CODE_STATUS[r.code] ?? 500, body: { code: r.code, error: r.error ?? "Failed." } };
 const fail = (status: number, code: string, error: string, extra: Record<string, unknown> = {}): Out => ({ status, body: { code, error, ...extra } });
 const noDb = () => fail(503, "NO_SERVICE_ROLE", "Server is missing SUPABASE_SERVICE_ROLE_KEY.");
-const dbError = (e: { message: string }) => fail(422, "INVALID", e.message.slice(0, 300));
+// Postgres data/integrity errors (class 22 / 23: bad level, unknown shelf, cross-store shelf) are the caller's input → 422.
+// Anything else (connection, missing function, permissions) is a server fault → 500, without leaking internals.
+const dbError = (e: { message: string; code?: string }) =>
+  /^2[23]/.test(e.code ?? "") ? fail(422, "INVALID", e.message.slice(0, 300)) : fail(500, "DB_ERROR", "The database request failed. Try again.");
 
 // ───────────────────────────── Store lookups (for the route's staff check) ─────────────────────────────
 
@@ -41,7 +44,14 @@ export async function productStore(id: string): Promise<string | null> {
   return (data as { store_id?: string } | null)?.store_id ?? null;
 }
 
+export async function mapStore(id: string): Promise<string | null> {
+  if (!supabaseMode()) return getMaps(DEMO_STORE.id)?.published.mapId === id ? DEMO_STORE.id : null;
+  const { data } = (await getAdminDb()?.from("store_maps").select("store_id").eq("id", id).maybeSingle()) ?? {};
+  return (data as { store_id?: string } | null)?.store_id ?? null;
+}
+
 // ───────────────────────────── Review ─────────────────────────────
+// Both backends answer success with the same body: { observation_id, status, product_id, is_new }.
 
 export interface ReviewInput {
   action: "publish" | "reject" | "rescan";
@@ -57,22 +67,33 @@ export async function reviewObservation(id: string, input: ReviewInput, actor: A
   if (!supabaseMode()) {
     const r = memReview({ ...input, observationId: id }, DEMO_STAFF);
     if (!r.ok) return fail(r.status, r.code, r.error, r.failing ? { failing: r.failing } : {});
-    return { status: 200, body: { observation: r.observation, product_id: r.product?.id ?? null, is_new: r.isNew ?? false } };
+    return { status: 200, body: { observation_id: r.observation.id, status: r.observation.status, product_id: r.product?.id ?? null, is_new: r.isNew ?? false } };
   }
   const db = getAdminDb();
   if (!db) return noDb();
   const base = { p_observation_id: id, p_action: input.action, p_obs_version: input.obsVersion, p_actor: actor.userId, p_actor_label: actor.label };
   if (input.action !== "publish") {
     const { data, error } = await db.rpc("review_observation", { ...base, p_reason: input.reason ?? null });
-    return error ? dbError(error) : fromSql(data);
+    return error ? dbError(error) : reviewBody(fromSql(data), false);
+  }
+  // Contract order: still NEEDS_REVIEW (409) → observation version (409) → validation (422). The 409 checks are
+  // repeated under a row lock inside review_observation(); this read only makes a stale request report 409, not 422.
+  const { data: obs, error: obsError } = await db.from("observations").select("candidate_json, review_status, version").eq("id", id).maybeSingle();
+  if (obsError) return dbError(obsError);
+  const row = obs as { candidate_json?: Partial<ObservationCandidate>; review_status: string; version: number } | null;
+  if (!row) return fail(404, "NOT_FOUND", "Observation not found.");
+  if (row.review_status !== "NEEDS_REVIEW") {
+    return fail(409, "ALREADY_REVIEWED", `This observation is already ${row.review_status.toLowerCase().replace("_", " ")}. It cannot be reviewed again.`);
+  }
+  if (row.version !== input.obsVersion) {
+    return fail(409, "CONFLICT", "This observation changed since you opened it. Go back to the queue and review it again.");
   }
   const d = input.draft;
   if (!d) return fail(422, "INVALID", "Review details are required to publish.", { failing: ["draft"] });
   // The reviewer's confirmations are required server-side too (the UI's checklist is not trusted).
   const failing = [!d.idOk && "Product identity verified", !d.locOk && "Exact shelf location verified", !d.name.trim() && "Product name", !d.shelf && "Shelf", !d.match && "Existing inventory match"].filter(Boolean) as string[];
   if (failing.length) return fail(422, "INVALID", "Server validation failed: " + failing.join("; ").toLowerCase() + ".", { failing });
-  const { data: obs } = await db.from("observations").select("candidate_json").eq("id", id).maybeSingle();
-  const cand = ((obs as { candidate_json?: Partial<ObservationCandidate> } | null)?.candidate_json ?? {}) as Partial<ObservationCandidate>;
+  const cand = (row.candidate_json ?? {}) as Partial<ObservationCandidate>;
   const edited = EDIT_KEYS.some((k) => (cand[k] || "") !== (d[k] || ""));
   const { data, error } = await db.rpc("review_observation", {
     ...base,
@@ -83,8 +104,13 @@ export async function reviewObservation(id: string, input: ReviewInput, actor: A
     p_target_version: d.match === "new" ? null : (input.targetVersion ?? d.targetVersion),
     p_edited: edited,
   });
-  return error ? dbError(error) : fromSql(data);
+  return error ? dbError(error) : reviewBody(fromSql(data), d.match === "new");
 }
+
+const reviewBody = (out: Out, isNew: boolean): Out =>
+  out.status !== 200
+    ? out
+    : { status: 200, body: { observation_id: out.body.observation_id, status: out.body.status, product_id: out.body.product_id ?? null, is_new: isNew } };
 
 // ───────────────────────────── Product move ─────────────────────────────
 
@@ -92,7 +118,8 @@ export async function moveProduct(id: string, shelfId: string, level: ShelfLevel
   if (!supabaseMode()) {
     const r = memMove(id, shelfId, level, expectedVersion, DEMO_STAFF);
     if (!r.ok) return fail(r.status, r.code, r.error, r.failing ? { failing: r.failing } : {});
-    return { status: 200, body: { location: r.product.location, version: r.product.version } };
+    // Same body as Supabase mode: the location in the contract's snake_case.
+    return { status: 200, body: { location: { product_id: id, shelf_id: r.product.location.shelfId, level: r.product.location.level }, version: r.product.version } };
   }
   const db = getAdminDb();
   if (!db) return noDb();
@@ -132,6 +159,7 @@ export async function submitShopperObservation(storeId: string, confidence: "Hig
   if (!db) return noDb();
   const { data, error } = await db.rpc("submit_shopper_observation", { p_store_id: storeId, p_candidate: candidate, p_confidence: confidence, p_evidence: evidence });
   if (error) return dbError(error);
+  if (data.code !== "OK") return fromSql(data);
   const merged = !!data.merged;
   return {
     status: 200,

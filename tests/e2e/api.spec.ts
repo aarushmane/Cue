@@ -21,7 +21,7 @@ test("review route: auth, reason check, reject, then 409 on a second review", as
 
   const ok = await request.post(url, { headers: staff, data: { action: "reject", obs_version: 1, reason: "wrong item" } });
   expect(ok.status()).toBe(200);
-  expect((await ok.json()).observation.status).toBe("REJECTED");
+  expect(await ok.json()).toEqual({ observation_id: "OBS-102", status: "REJECTED", product_id: null, is_new: false });
 
   const again = await request.post(url, { headers: staff, data: { action: "rescan", obs_version: 2, reason: "try again" } });
   expect(again.status()).toBe(409);
@@ -55,7 +55,7 @@ test("location route: version check, move, and shopper search sees it", async ({
 
   const ok = await request.patch(url, { headers: staff, data: { shelf_id: "S-A1-2", level: "top", expected_version: 1 } });
   expect(ok.status()).toBe(200);
-  expect((await ok.json()).location.shelfId).toBe("S-A1-2");
+  expect(await ok.json()).toEqual({ location: { product_id: "P01", shelf_id: "S-A1-2", level: "top" }, version: 2 });
 
   const search = await (await request.get("/api/products?store_id=demo-store&query=bananas")).json();
   const p = search.results.find((r: { product: { id: string } }) => r.product.id === "P01").product;
@@ -66,6 +66,7 @@ test("map routes: publish without a draft is refused", async ({ request }) => {
   const r = await request.post("/api/maps/map-demo-v1/publish", { headers: staff });
   expect(r.status()).toBe(422);
   expect((await request.post("/api/maps/map-demo-v1/publish")).status()).toBe(401);
+  expect((await request.post("/api/maps/no-such-map/publish", { headers: staff })).status()).toBe(404);
 });
 
 test("shopper submission route: consent required, then submit and merge", async ({ request }) => {

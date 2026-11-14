@@ -106,6 +106,8 @@ Multipart `store_id`, `shelf_id`, and `file`. Returns `{ media_id, url }`. Video
 
 **Built** (`app/api/observations/[id]/review/route.ts`, `lib/staff/service.ts`). Body:
 `{ action: "publish"|"accept"|"edit"|"reject"|"rescan", obs_version, draft?: ReviewDraft, target_version?, reason? }`.
+Success (both modes): `{ observation_id, status, product_id: string|null, is_new: boolean }`. Errors: `{ code, error, failing? }`.
+A merge (`draft.match` = a product id) without a target version is a 409 `TARGET_CONFLICT`.
 Supabase mode calls `review_observation()` from `supabase/migrations/004_review_v4.sql` (one transaction; the server
 re-checks the reviewer's identity/location confirmations, and the DB enforces shelf, level and same-store rules;
 the full `validate()` checklist runs only in memory mode for now). Memory mode runs `lib/db/demoState.ts` with the
@@ -113,7 +115,7 @@ seeded staff member. The manager screens still call the demo adapter (`reviewObs
 no staff sign-in yet; switching is one `fetch` per call once it does.
 
 ### `PATCH /api/products/:id/location` (staff) — built
-`{ shelf_id, level, expected_version? }` → `{ location, version }`. Supabase: `move_product_checked()` (version check +
+`{ shelf_id, level, expected_version? }` → `{ location: { product_id, shelf_id, level }, version }` (both modes). 422 if the shelf is not on the store's published map. Supabase: `move_product_checked()` (version check +
 `move_product` in one transaction; 409 on a stale version). Requests without staff auth get 401 or 403 (test P01).
 
 ### `PUT /api/maps/:id/graph` and `POST /api/maps/:id/publish` (staff) — built for memory mode
