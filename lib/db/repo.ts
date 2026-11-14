@@ -5,6 +5,8 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Landmark, Product, ProductLocation, PublishedProduct, Shelf, StoreGraph } from "../types";
 import * as seed from "../seed/demo-store";
+import { db as demoDb } from "./demoState";
+import { toStoreGraph } from "../map/graph";
 
 export interface StoreSummary {
   id: string;
@@ -23,40 +25,62 @@ export interface StoreRepo {
 }
 
 // ───────────────────────────── Memory ─────────────────────────────
-// Mutable copies so staff edits work in memory mode (and in tests). Reset on server restart.
-const memProducts: Product[] = seed.DEMO_PRODUCTS.map((p) => ({ ...p, aliases: [...p.aliases] }));
-const memLocations: ProductLocation[] = seed.DEMO_LOCATIONS.map((l) => ({ ...l, lastSeenAt: null, missCount: 0 }));
+// One in-memory product store for the whole app: lib/db/demoState.ts (globalThis, reset on server restart).
+// Staff review/moves (business UI), adaptive-inventory approvals (lib/inventory) and shopper reads all share it,
+// so a change from any of them reaches shopper search and live rerouting on the next request.
 
-/** Memory-mode state for the inventory module (lib/inventory). Server-only. */
+const shelfSummary = (shelfId: string) => {
+  const s = seed.DEMO_SHELVES.find((x) => x.id === shelfId);
+  return s ? { id: s.id, aisle: s.aisle, section: s.section } : null;
+};
+
+/**
+ * Memory-mode state for the inventory module (lib/inventory). Server-only.
+ * `locations` are the live location objects inside the shared store, so in-place updates (lastSeenAt, missCount) stick.
+ */
 export function memoryInventory() {
-  return { products: memProducts, locations: memLocations, shelves: seed.DEMO_SHELVES };
+  const products = demoDb().products;
+  return { products, locations: products.map((p) => p.location), shelves: seed.DEMO_SHELVES };
 }
 
-/** Memory-mode: add a product with a published location. */
+/** Memory-mode: add a product with a published location. Uses the same P## id scheme as staff review. */
 export function memoryAddProduct(p: Omit<Product, "id">, shelfId: string, level: ProductLocation["level"]): string | null {
-  if (!seed.DEMO_SHELVES.some((s) => s.id === shelfId)) return null;
-  const id = `P-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-  memProducts.push({ ...p, id });
-  memLocations.push({ productId: id, shelfId, level, verifiedAt: new Date().toISOString(), lastSeenAt: new Date().toISOString(), missCount: 0 });
+  const shelf = shelfSummary(shelfId);
+  if (!shelf) return null;
+  const state = demoDb();
+  const n = Math.max(0, ...state.products.map((x) => Number(x.id.slice(1)) || 0)) + 1;
+  const id = "P" + String(n).padStart(2, "0");
+  const now = new Date().toISOString();
+  const product: PublishedProduct = {
+    ...p, id, aliases: [...p.aliases], version: 1,
+    location: { productId: id, shelfId, level, verifiedAt: now, lastSeenAt: now, missCount: 0 },
+    shelf,
+  };
+  state.products = [...state.products, product];
   return id;
 }
 
 /** Memory-mode: unpublish a product's location (staff confirmed it is gone). */
 export function memoryRetireLocation(productId: string): boolean {
-  const i = memLocations.findIndex((l) => l.productId === productId);
-  if (i < 0) return false;
-  memLocations.splice(i, 1);
+  const state = demoDb();
+  if (!state.products.some((p) => p.id === productId)) return false;
+  state.products = state.products.filter((p) => p.id !== productId);
   return true;
 }
 
 /** Memory-mode equivalent of the move_product SQL function. Returns false for unknown product/shelf. */
 export function memoryMoveProduct(productId: string, shelfId: string, level: PublishedProduct["location"]["level"]): boolean {
-  const loc = memLocations.find((l) => l.productId === productId);
-  if (!loc || !seed.DEMO_SHELVES.some((s) => s.id === shelfId)) return false;
-  loc.shelfId = shelfId;
-  loc.level = level;
-  loc.verifiedAt = new Date().toISOString();
-  loc.missCount = 0;
+  const state = demoDb();
+  const p = state.products.find((x) => x.id === productId);
+  const shelf = shelfSummary(shelfId);
+  if (!p || !shelf) return false;
+  // Bump the version so a staff screen holding the old record gets a conflict instead of overwriting.
+  const moved: PublishedProduct = {
+    ...p, version: (p.version ?? 1) + 1,
+    location: { ...p.location, shelfId, level, verifiedAt: new Date().toISOString(), missCount: 0 },
+    shelf,
+  };
+  state.products = state.products.map((x) => (x.id === productId ? moved : x));
   return true;
 }
 
@@ -70,6 +94,9 @@ class MemoryRepo implements StoreRepo {
 
   async getPublishedGraph(storeId: string): Promise<StoreGraph | null> {
     if (storeId !== seed.DEMO_STORE.id) return null;
+    // A floor plan published from the staff editor (v2+) replaces the seeded map for routing.
+    const published = demoDb().maps.published;
+    if (published.version !== seed.DEMO_MAP.version) return toStoreGraph(published, storeId);
     return {
       storeId,
       mapId: seed.DEMO_MAP.id,
@@ -84,12 +111,9 @@ class MemoryRepo implements StoreRepo {
 
   async listPublishedProducts(storeId: string): Promise<PublishedProduct[]> {
     if (storeId !== seed.DEMO_STORE.id) return [];
-    const shelves = new Map(seed.DEMO_SHELVES.map((s) => [s.id, s]));
-    return memProducts.flatMap((p) => {
-      const location = memLocations.find((l) => l.productId === p.id);
-      const shelf = location && shelves.get(location.shelfId);
-      return location && shelf ? [{ ...p, location: { ...location }, shelf: { id: shelf.id, aisle: shelf.aisle, section: shelf.section } }] : [];
-    });
+    // Starts as the seed; staff approvals/moves and approved inventory suggestions update it, so shopper search
+    // and routes pick up a published change on the very next request.
+    return demoDb().products.filter((p) => p.storeId === storeId).map((p) => ({ ...p, aliases: [...p.aliases], location: { ...p.location }, shelf: { ...p.shelf } }));
   }
 
   async listLandmarks(storeId: string): Promise<Landmark[]> {

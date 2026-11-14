@@ -1,26 +1,82 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
+/* StoreGuide v4 design tokens (design-handoff/README.md → Design tokens). */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-lavender: #e9e4f3;
+  --color-ivory: #f7f5f0;
+  --color-indigo: #44337a;
+  --color-indigo-pressed: #2e2257;
+  --color-gold: #e8b84b;
+  --color-charcoal: #252331;
+  --color-muted: #5b5570;
+  --color-control: #776c95;
+  --color-card: #d6cce8;
+  --color-tint: #dcd3ec;
+  --color-mapline: #b9aed6;
+  --color-mapline-strong: #9c90c2;
+  --color-warn: #f8ebc8;
+  --color-err: #8a2e12;
+  --font-sans: var(--font-figtree), system-ui, sans-serif;
+  --font-display: var(--font-caprasimo), serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+html,
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: #e9e4f3;
+  color: #252331;
+  font-family: var(--font-figtree), system-ui, sans-serif;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
+button:not(:disabled) {
+  cursor: pointer;
+}
+
+a {
+  color: #44337a;
+}
+a:hover {
+  color: #2e2257;
+}
+
+/* Focus ring on every focusable element. */
+:focus-visible {
+  outline: 3px solid #44337a;
+  outline-offset: 3px;
+  box-shadow: 0 0 0 7px #e8b84b;
+}
+.sg-file:focus-within {
+  outline: 3px solid #44337a;
+  outline-offset: 3px;
+  box-shadow: 0 0 0 7px #e8b84b;
+}
+
+/* Primary actions darken when pressed. */
+.sg-primary:not(:disabled):active {
+  background: #2e2257;
+}
+.sg-outline:not(:disabled):hover {
+  background: #dcd3ec;
+}
+
+.sr-only-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
 }

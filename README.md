@@ -8,8 +8,12 @@ Voice-first indoor product finding for blind and low-vision shoppers. Stores kee
 npm install
 cp .env.example .env.local   # optional: leave it empty to use the seeded in-memory store
 npm run dev                  # http://localhost:3000
-npm test                     # unit tests (routing, search, seed integrity)
+npm test                     # unit tests (routing, search, review workflow, floor plan graph)
+npm run test:e2e             # Playwright: v4 handoff scenarios + accessibility checks (starts `next dev` on :3100)
+PW_CHANNEL=chrome npm run test:e2e   # same, using an installed Google Chrome
 ```
+
+Open `/shopper` (voice-first shopper app) or `/business` (store manager: Home, Floor Plan, Review, More).
 
 Try the API:
 
@@ -33,7 +37,7 @@ curl -X POST localhost:3000/api/agent/shopper -H 'content-type: application/json
 ```
 
 ### Adaptive inventory
-Every shopper scan (`/api/localize`) also lists the products visible in the frames. Where the shopper's position is known, they become inventory updates: items seen in place refresh "last seen"; new, moved or missing items become suggestions that staff approve or reject at **`/staff/inventory`** (enter the staff token; memory mode uses `STAFF_DEMO_TOKEN`). Nothing reaches shoppers until approved. Only text is stored, never images. Apply `supabase/migrations/003_adaptive_inventory.sql` in Supabase mode.
+Every shopper scan (`/api/localize`) also lists the products visible in the frames. Where the shopper's position is known, they become inventory updates: items seen in place refresh "last seen"; new, moved or missing items become suggestions that staff approve or reject in the manager app at **`/business/sightings`** (More → Shopper sightings; approvals are logged to Activity). API clients use `/api/inventory/*` with a staff token (memory mode: `STAFF_DEMO_TOKEN`). Nothing reaches shoppers until approved. Only text is stored, never images. Apply `supabase/migrations/003_adaptive_inventory.sql` in Supabase mode.
 
 ### CoStar track data (real)
 1. In the track Discord run `/costar-keys`; put `MATTERPORT_API_KEY`, `MATTERPORT_API_TOKEN`, `VEXCEL_API_KEY` in `.env.local`.
@@ -70,6 +74,10 @@ Once `NEXT_PUBLIC_SUPABASE_URL` is set, the app reads from Supabase instead of t
 | `lib/vision/` | Landmark matching (localization) and shelf recognition |
 | `lib/auth/requireStaff.ts` | Staff checks for every mutation route |
 | `app/api/` | Route handlers |
+| `app/business/`, `components/business/`, `components/map/` | Store manager screens (v4 design handoff) |
+| `app/shopper/`, `components/shopper/` | Shopper screens: voice search, results, destination, help, settings, consent, observation scan |
+| `lib/review/`, `lib/map/graph.ts` | `validate()`, `findMatches()`, `routeTo()`, `reachable()`, `mapChecks()`, shared by UI and server |
+| `lib/demo/adapter.ts` | **Demo adapter**: Server Functions over the in-memory `lib/db/demoState.ts` for staff writes that have no API route yet. Not durable, no real auth; screens keep "Demo action" labels |
 | `supabase/migrations/` | Schema, RLS, `move_product` transactional function |
 
 This is Next.js 16. Read `node_modules/next/dist/docs/` before relying on older Next.js knowledge (e.g. `params` is async).

@@ -72,7 +72,10 @@ export interface Product {
   variant: string | null;
   size: string | null;
   aliases: string[];
-  category?: string | null; // product type, e.g. "plant-based milk"
+  /** Product type / staff-facing category, e.g. "plant-based milk". Optional so older rows stay valid. */
+  category?: string | null;
+  /** Optimistic-concurrency version, bumped on every staff edit or move. */
+  version?: number;
 }
 
 export type ShelfLevel = "top" | "upper" | "middle" | "lower" | "bottom";
@@ -82,6 +85,8 @@ export interface ProductLocation {
   shelfId: string;
   level: ShelfLevel | null;
   verifiedAt: string; // ISO timestamp
+  /** Display label of whoever verified this location (staff only; never shopper data). */
+  verifiedBy?: string | null;
   lastSeenAt?: string | null; // last time a shopper's camera saw it at this location
   missCount?: number; // consecutive scans that looked at this shelf without seeing it
 }
@@ -119,3 +124,109 @@ export type RouteResult =
   | { status: "ALREADY_THERE"; path: string[]; destinationShelfId: string; steps: RouteStep[]; mapVersion: number }
   | { status: "ROUTE_UNAVAILABLE"; reason: string }
   | { status: "PRODUCT_NOT_PUBLISHED" | "START_NODE_INVALID"; reason: string };
+
+// ───────────────────────────── Review workflow ─────────────────────────────
+
+/**
+ * Observation review status. `NEEDS_RESCAN` is the proposed addition from the v4 design handoff
+ * (see docs/contracts.md; the database change is drafted, not applied, in docs/proposals/002_needs_rescan.sql).
+ */
+export type ReviewStatus = "NEEDS_REVIEW" | "ACCEPTED" | "EDITED" | "REJECTED" | "NEEDS_RESCAN";
+
+export type ObservationSource = "shopper" | "ai";
+
+/** What recognition (or a shopper) proposed. Empty strings mean "not detected". */
+export interface ObservationCandidate {
+  name: string;
+  brand: string;
+  category: string;
+  size: string;
+  variant: string;
+  aisle: string;
+  shelf: string; // shelf id, e.g. "S-A2-2", or "" when no exact shelf
+  level: ShelfLevel | "";
+}
+
+/** The employee's working copy of an observation while reviewing it. */
+export interface ReviewDraft extends ObservationCandidate {
+  /** "" = not checked yet, "new" = confirmed new product, otherwise a product id to merge into. */
+  match: string;
+  targetVersion: number | null;
+  idOk: boolean;
+  locOk: boolean;
+  idReset?: boolean;
+  locReset?: boolean;
+  obsVersion: number;
+}
+
+export interface Observation {
+  id: string;
+  source: ObservationSource;
+  storeId: string;
+  at: string;
+  confidence: "High" | "Medium" | "Low";
+  evidence: string;
+  sightings?: number;
+  candidate: ObservationCandidate;
+  suggestedMatch?: string;
+  status: ReviewStatus;
+  version: number;
+  reviewedBy?: string;
+  reviewedById?: string;
+  reviewedAt?: string;
+  reason?: string;
+  productId?: string;
+  isNew?: boolean;
+  /** Details saved by an employee without publishing. */
+  saved?: ReviewDraft;
+}
+
+export type ReviewAction = "publish" | "reject" | "rescan";
+
+export type AuditKind = "approve" | "reject" | "rescan" | "move" | "map" | "ai";
+
+/** Audit event as returned by GET /api/audit (snake_case per docs/contracts.md, plus display fields). */
+export interface AuditEvent {
+  id: string;
+  actor_label: string;
+  action: AuditKind;
+  entity: string;
+  entity_id: string | null;
+  old_json: { display: string } & Record<string, unknown>;
+  new_json: { display: string } & Record<string, unknown>;
+  created_at: string;
+  summary: string;
+  evidence: string;
+  original_observation: string | null;
+}
+
+// ───────────────────────────── Floor plan editor ─────────────────────────────
+
+/** Editor node kinds. "walk" is a walk point drawn by staff; it is stored as a `junction` in StoreGraph. */
+export type PlanNodeKind = "entrance" | "service" | "walk" | "junction" | "shelf_approach" | "aisle_marker" | "outdoor";
+
+/** Floor plan in the editor's format. All coordinates are normalized 0..1, origin top-left. */
+export interface FloorPlan {
+  mapId: string;
+  version: number;
+  plan: { url: string; name: string; kind: "image" | "pdf" } | null;
+  aspect: number; // width / height
+  nodes: { id: string; x: number; y: number; kind: PlanNodeKind }[];
+  edges: [string, string][];
+  shelves: { key: string; id: string; x: number; y: number; w: number; h: number; anchor: string }[];
+  landmarks: { id: string; x: number; y: number; label: string; verified: boolean }[];
+}
+
+export interface StoreMaps {
+  published: FloorPlan;
+  draft: FloorPlan | null;
+  draftSavedAt: string | null;
+}
+
+/** Signed-in employee. The demo uses a single seeded manager until Supabase auth is wired. */
+export interface StaffMember {
+  id: string;
+  label: string;
+  stores: string[];
+  canPublish: boolean;
+}
