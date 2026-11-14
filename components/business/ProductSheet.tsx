@@ -1,12 +1,12 @@
 "use client";
 import { useState, useTransition } from "react";
 import { X } from "lucide-react";
-import { moveProductDemo } from "@/lib/demo/adapter";
+import { moveProduct } from "@/lib/staff/client";
 import { brandSize, fmt, LEVELS, locLong, locLongOf, SHELF_CATALOG } from "@/lib/review/format";
 import { AISLE_NAMES } from "@/lib/seed/demo-store";
 import type { ShelfLevel } from "@/lib/types";
 import { useSnap, useStaff } from "./StaffProvider";
-import { AlertDialog, Button, DemoTag, Field, ICON, PhotoSlot, Select, Sheet } from "./ui";
+import { AlertDialog, Button, Field, ICON, PhotoSlot, Select, Sheet } from "./ui";
 
 export function ProductSheet() {
   const snap = useSnap();
@@ -26,8 +26,9 @@ export function ProductSheet() {
   const publish = () =>
     start(async () => {
       setError(null);
-      const r = await moveProductDemo(p.id, shelf, level, p.version ?? 1);
-      s.apply(r);
+      const r = await moveProduct(p.id, shelf, level, p.version ?? 1);
+      // No snapshot from the route: re-read it (after a 409 too, so the sheet shows the current location).
+      await s.refresh();
       if (!r.ok) {
         setError(r.error);
         return;
@@ -95,7 +96,6 @@ export function ProductSheet() {
             <dt className="text-muted">To</dt>
             <dd className="m-0 font-bold">{to}</dd>
           </dl>
-          <DemoTag />
           {busy && <p role="status" className="m-0 text-[15px] font-semibold">Publishing…</p>}
           {error && (
             <p role="alert" className="m-0 rounded-[22px] border-2 border-gold bg-warn px-4 py-3.5 text-[15px]">

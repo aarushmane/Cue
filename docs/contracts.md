@@ -111,12 +111,17 @@ A merge (`draft.match` = a product id) without a target version is a 409 `TARGET
 Supabase mode calls `review_observation()` from `supabase/migrations/004_review_v4.sql` (one transaction; the server
 re-checks the reviewer's identity/location confirmations, and the DB enforces shelf, level and same-store rules;
 the full `validate()` checklist runs only in memory mode for now). Memory mode runs `lib/db/demoState.ts` with the
-seeded staff member. The manager screens still call the demo adapter (`reviewObservationDemo`) because the app has
-no staff sign-in yet; switching is one `fetch` per call once it does.
+seeded staff member. The manager screens call it through `staffFetch` (`lib/staff/client.ts`) and re-read the
+snapshot afterwards, since the route doesn't return one.
 
 ### `PATCH /api/products/:id/location` (staff) — built
 `{ shelf_id, level, expected_version? }` → `{ location: { product_id, shelf_id, level }, version }` (both modes). 422 if the shelf is not on the store's published map. Supabase: `move_product_checked()` (version check +
 `move_product` in one transaction; 409 on a stale version). Requests without staff auth get 401 or 403 (test P01).
+
+**Staff auth for these routes.** Supabase mode: `Authorization: Bearer <access token>` (sent by `staffFetch` after
+staff sign-in) and a `store_staff` row for the resource's store. Memory mode (no sign-in exists): `Bearer
+$STAFF_DEMO_TOKEN`, or no `Authorization` header from a same-origin browser page (the manager app itself; the same
+cross-site protection Next gives Server Functions). Anything else is 401.
 
 ### `PUT /api/maps/:id/graph` and `POST /api/maps/:id/publish` (staff) — built for memory mode
 `PUT` takes the editor's `FloorPlan` (nodes, edges, shelves, landmarks) and saves it as the draft. `POST …/publish`

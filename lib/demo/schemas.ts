@@ -14,14 +14,6 @@ export const Draft = Candidate.extend({
   match: z.string().max(40), targetVersion: z.number().int().nullable(), idOk: z.boolean(), locOk: z.boolean(),
   idReset: z.boolean().optional(), locReset: z.boolean().optional(), obsVersion: z.number().int(),
 });
-export const ReviewReq = z.object({
-  action: z.enum(["publish", "reject", "rescan"]),
-  observationId: z.string().max(40),
-  obsVersion: z.number().int(),
-  draft: Draft.optional(),
-  targetVersion: z.number().int().nullable().optional(),
-  reason: z.string().max(500).optional(),
-});
 const Point = z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) });
 export const Plan = z.object({
   mapId: z.string().max(60),
@@ -33,13 +25,5 @@ export const Plan = z.object({
   edges: z.array(z.tuple([z.string().max(20), z.string().max(20)])).max(2000),
   shelves: z.array(Point.extend({ key: z.string().max(40), id: z.string().max(40), w: z.number().min(0).max(1), h: z.number().min(0).max(1), anchor: z.string().max(20) })).max(500),
   landmarks: z.array(Point.extend({ id: z.string().max(20), label: z.string().max(120), verified: z.boolean() })).max(200),
-});
-
-
-export const Submission = z.object({
-  consent: z.literal("allowed"),
-  confidence: z.enum(["High", "Medium", "Low"]),
-  evidence: z.string().max(300),
-  candidate: Candidate,
 });
 
