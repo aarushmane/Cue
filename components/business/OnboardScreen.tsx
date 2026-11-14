@@ -8,6 +8,9 @@ import { CheckCircle2, Circle, CircleDot } from "lucide-react";
 import type { OnboardingResult } from "@/lib/agents/onboarding/agent";
 import { asTodos, streamOnboarding, todoAnnouncement, toolLabel, type Todo } from "@/lib/agents/onboarding/progress";
 import { runOnboardingDemo } from "@/lib/demo/onboard";
+import { draftToFloorPlan } from "@/lib/map/draftToFloorPlan";
+import { saveMapDraft } from "@/lib/staff/client";
+import { useStaff } from "./StaffProvider";
 import { DraftGraphMap } from "@/components/map/DraftGraphMap";
 import { MiniMarkdown } from "./MiniMarkdown";
 import { AlertDialog, BackLink, Button, Card, controlClass, DemoTag, H2, ICON, PageHeader } from "./ui";
@@ -35,6 +38,61 @@ function PlanList({ todos }: { todos: Todo[] }) {
         );
       })}
     </ol>
+  );
+}
+
+/** Load the imported graph into the floor plan editor as the store's map draft (issue #4, 2F). */
+function EditDraft({ result }: { result: OnboardingResult }) {
+  const router = useRouter();
+  const s = useStaff();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const g = result.view.graph;
+  if (!g) return null;
+  if (!s.snap) return <p className="m-0 text-sm text-muted">Loading store data…</p>;
+  if (s.snap.storeId !== result.store_id) {
+    return (
+      <p className="m-0 text-sm text-muted">
+        The floor plan editor manages {s.snap.storeName}; this run was for {result.store_id}, so it can&apos;t be opened there.
+      </p>
+    );
+  }
+  const pub = s.snap.maps.published;
+  const { plan, notes } = draftToFloorPlan(g, pub, result.view.property?.name ? `${result.view.property.name} floor plan` : undefined);
+
+  const open = async () => {
+    if (busy) return;
+    if (s.fp.dirty) {
+      setError("The floor plan editor has unsaved changes. Save or discard them there first.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    const r = await saveMapDraft(pub.mapId, plan);
+    if (!r.ok) {
+      setBusy(false);
+      setError(r.error);
+      return;
+    }
+    await s.refresh();
+    s.setFp({ mode: "edit", draft: plan, dirty: false, tool: "select", sel: null, connectFrom: null, route: "", view: { z: 1, tx: 0, ty: 0 }, confirm: false });
+    s.toast("Imported draft opened. Draw shelves and check the entrance before publishing.");
+    router.push("/business/floor-plan");
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <ul className="m-0 flex flex-col gap-1 pl-5 text-sm">
+        {notes.map((n) => <li key={n}>{n}</li>)}
+      </ul>
+      {s.snap.maps.draft && (
+        <p className="m-0 text-sm font-semibold">This replaces the floor plan draft that is saved now. The published map doesn&apos;t change.</p>
+      )}
+      <Button variant="outline" onClick={open} aria-disabled={busy || undefined} className="self-start text-[15px]">
+        {busy ? "Saving draft…" : "Edit this draft in the floor plan editor"}
+      </Button>
+      {error && <p role="alert" className="m-0 text-[15px] font-semibold text-err">{error}</p>}
+    </div>
   );
 }
 
@@ -267,6 +325,7 @@ export function OnboardScreen() {
                 {Math.round(g.width_m)} × {Math.round(g.height_m)} m. Gold dots are the entrance, outlined dots are landmark scan points used to find
                 shoppers. {g.plan ? "The plan is aligned from Matterport's origin and scale; check it visually." : "No floor plan image came with this model."}
               </p>
+              <EditDraft result={result} />
             </section>
           )}
 
