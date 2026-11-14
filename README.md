@@ -11,6 +11,14 @@ Open http://localhost:3000. Click the viewer to focus, drag to look, use WASD to
 
 The original OBJ is untextured. Photographic panoramas are not mesh textures.
 
+## Python backend
+
+The separate read-only FastAPI server lives in [backend/](backend/README.md) and is
+managed with uv. Run `uv sync` from `backend/`, then
+`uv run uvicorn main:app --reload --host 127.0.0.1 --port 8000`.
+API docs are at http://127.0.0.1:8000/docs. It reuses the existing public Supabase
+configuration, with no authentication or agent endpoints in this initial version.
+
 ## Property data
 
 Use `.env.local` for the Supabase settings in `.env.example`. The existing `stores` table already has `costar_property_id`, `matterport_model_id`, `name`, and `address`. Existing Supabase tables, records, migrations, and seed SQL are preserved.
