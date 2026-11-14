@@ -4,6 +4,7 @@
 import { z } from "zod";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { resolveImage } from "../ai/images";
 import { structuredVision, type Piece } from "../ai/structured";
 import type { Landmark, LocalizeResult, StoreGraph } from "../types";
 
@@ -64,16 +65,60 @@ export function decidePosition(match: LandmarkMatch, landmarks: Landmark[], grap
   };
 }
 
-async function referenceImage(url: string | null): Promise<string | null> {
-  if (!url) return null;
-  if (url.startsWith("https://")) return url; // Matterport panorama face; fetched by resolveImage (host-restricted)
-  if (!url.startsWith("/")) return null;
-  try {
-    const buf = await readFile(path.join(process.cwd(), "public", url));
-    return buf.toString("base64");
-  } catch {
-    return null; // reference photo not taken yet; the text description is still used
+// ───────────────────────────── Reference photos ─────────────────────────────
+// Each landmark can carry a reference photo (`imageUrl`): a file under public/ (e.g. "/demo/landmarks/L01.jpg")
+// or a Matterport panorama https URL. Photos make matching more reliable but cost tokens on every scan, so:
+// - a missing, unreadable, oversized or unsupported file is skipped (the text description is still used) and
+//   reported once in the server log (path only);
+// - local files are cached in memory; a miss is re-checked after a minute, so photos added later are picked up;
+// - remote panoramas are fetched here, so an expired signed link drops only that reference instead of failing the
+//   whole scan;
+// - LANDMARK_REFERENCE_IMAGES=off sends descriptions only (saves quota).
+
+const REF_MAX_BYTES = 1_500_000; // same order as one shopper frame
+const MISS_TTL_MS = 60_000;
+const REMOTE_TTL_MS = 10 * 60_000; // Matterport signed links last about an hour
+const MIME: Record<string, string> = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp" };
+
+type Cached = { value: string | null; at: number };
+const refCache = new Map<string, Cached>();
+const warned = new Set<string>();
+function warnOnce(key: string, msg: string) {
+  if (warned.has(key)) return;
+  warned.add(key);
+  console.warn(`[localize] ${msg}`);
+}
+
+/** Exported for tests. `root` is the folder public URLs resolve against (default: ./public). */
+export async function referenceImage(url: string | null, root = path.join(process.cwd(), "public")): Promise<string | null> {
+  if (!url || process.env.LANDMARK_REFERENCE_IMAGES === "off") return null;
+  const key = `${root}|${url}`;
+  const hit = refCache.get(key);
+  const ttl = hit?.value ? (url.startsWith("https://") ? REMOTE_TTL_MS : Infinity) : MISS_TTL_MS;
+  if (hit && Date.now() - hit.at < ttl) return hit.value;
+
+  let value: string | null = null;
+  if (url.startsWith("https://")) {
+    try {
+      value = await resolveImage(url); // host-restricted (Matterport CDN), type- and size-checked
+    } catch (err) {
+      warnOnce(key, `reference ${url.split("?")[0]} skipped: ${err instanceof Error ? err.message : "fetch failed"}`);
+    }
+  } else if (url.startsWith("/") && !url.includes("..")) {
+    const mime = MIME[path.extname(url).toLowerCase()];
+    if (!mime) warnOnce(key, `reference ${url} skipped: use .jpg, .png or .webp`);
+    else {
+      try {
+        const buf = await readFile(path.join(root, url));
+        if (buf.length > REF_MAX_BYTES) warnOnce(key, `reference ${url} skipped: ${Math.round(buf.length / 1000)} KB is over ${REF_MAX_BYTES / 1000} KB (resize it)`);
+        else value = `data:${mime};base64,${buf.toString("base64")}`;
+      } catch {
+        warnOnce(key, `reference photo ${url} not found: matching uses the text description only`);
+      }
+    }
   }
+  refCache.set(key, { value, at: Date.now() });
+  return value;
 }
 
 export async function matchLandmark(args: {
@@ -89,12 +134,12 @@ export async function matchLandmark(args: {
   const near = adjacentNodeIds(graph, previousNodeId);
   const ordered = [...landmarks].sort((a, b) => Number(near.has(b.nodeId)) - Number(near.has(a.nodeId)));
 
+  const refs = await Promise.all(ordered.map((l) => referenceImage(l.imageUrl)));
   const content: Piece[] = [{ text: "Reference landmarks for this store:" }];
-  for (const l of ordered) {
-    content.push({ text: `Landmark ${l.id}: ${l.description}` });
-    const ref = await referenceImage(l.imageUrl);
-    if (ref) content.push({ image: ref });
-  }
+  ordered.forEach((l, i) => {
+    content.push({ text: `Landmark ${l.id}: ${l.description}${refs[i] ? " (reference photo follows)" : ""}` });
+    if (refs[i]) content.push({ image: refs[i]! });
+  });
   content.push({ text: `Shopper camera frames (${frames.length}):` });
   for (const f of frames) content.push({ image: f });
   content.push({
