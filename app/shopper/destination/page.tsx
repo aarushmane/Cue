@@ -6,6 +6,7 @@ import { AISLE_NAMES } from "@/lib/seed/demo-store";
 import { destinationSpeech, locKey, locText, useShopper } from "@/components/shopper/ShopperProvider";
 import { sBtn } from "@/components/shopper/ShopperShell";
 import { useFocusOnMount } from "@/components/shopper/useFocusOnMount";
+import { OfflineDirections } from "@/components/shopper/OfflineDirections";
 
 export default function DestinationPage() {
   const s = useShopper();
@@ -84,10 +85,7 @@ export default function DestinationPage() {
         Hear location
       </button>
       {s.guide.online === false ? (
-        <div className="rounded-[24px] border-[3px] border-dashed border-(--s-border) px-[1.1em] py-[1em] text-[1em]">
-          <strong className="block text-[1.05em]">Step-by-step directions are offline</strong>
-          The voice assistant is not available right now. Ask staff for help, or hear the shelf location above.
-        </div>
+        <OfflineDirections key={p.id} productId={p.id} />
       ) : (
         <button
           type="button"

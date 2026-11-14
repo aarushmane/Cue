@@ -206,3 +206,60 @@ test("returning to the guide screen later focuses the title, not the old reply a
   await expect(page).toHaveURL(/\/shopper\/guide$/);
   await expect(page.getByRole("heading", { level: 1 })).toBeFocused();
 });
+
+ test("rerouting notice is shown verbatim in CURRENT STEP", async ({ page }) => {
+  const say = "The store just updated where this item is. Rerouting. Walk forward…";
+  await page.route("**/api/agent/shopper", (route) => route.fulfill({ json: reply({ say, agent_text: "A new route is ready.", route_text: ["Walk forward…"] }, { state: "GUIDING" }) }));
+  await page.goto("/shopper/guide");
+  await page.getByLabel("Or type a reply").fill("next");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page.getByText("CURRENT STEP").locator("..")).toContainText(say);
+});
+
+ test("agent preference changes are reflected in settings", async ({ page }) => {
+  let sent: unknown;
+  await page.route("**/api/agent/shopper", (route) => {
+    sent = route.request().postDataJSON().nav.prefs.verbosity;
+    return route.fulfill({ json: reply({}, { state: "SEARCHING", prefs: { verbosity: "detailed", speech_rate: 1 } }) });
+  });
+  await page.goto("/shopper/guide");
+  await page.getByLabel("Or type a reply").fill("give more detail");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect.poll(() => sent).toBe("concise");
+  await expect(page.getByRole("button", { name: "Hear again" })).toBeVisible();
+  await page.getByRole("button", { name: "Accessibility and privacy settings" }).click();
+  await expect(page.getByRole("button", { name: "Detailed" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "Concise", exact: true })).toHaveAttribute("aria-pressed", "false");
+});
+
+ test("502 shows the error and stays on the guide screen", async ({ page }) => {
+  const say = "The assistant could not answer. Please try again.";
+  await page.route("**/api/agent/shopper", (route) => route.fulfill({ status: 502, json: { say } }));
+  await page.goto("/shopper/guide");
+  await page.getByLabel("Or type a reply").fill("eggs");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page.locator("main").getByText(say, { exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/shopper\/guide$/);
+});
+
+ test("offline search offers server route steps after confirming position", async ({ page }) => {
+  await page.route("**/api/agent/shopper", (route) => route.fulfill({ status: 503, json: { say: "Offline" } }));
+  const starts: string[] = [];
+  await page.route("**/api/routes", (route) => {
+    starts.push(route.request().postDataJSON().start_node_id);
+    const arrived = starts.length > 1;
+    return route.fulfill({ json: { status: arrived ? "ALREADY_THERE" : "OK", path: arrived ? ["N09"] : ["N01", "N09"], destinationShelfId: "S-A1-1", mapVersion: 1,
+      steps: [{ index: 0, fromNodeId: starts.at(-1), toNodeId: "N09", distanceM: arrived ? 0 : 4, text: arrived ? "Bananas are on the middle shelf." : "Walk forward to the shelf." }] } });
+  });
+  await page.goto("/shopper/guide");
+  await page.getByLabel("Or type a reply").fill("bananas");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page).toHaveURL(/\/shopper\/(destination|results)$/);
+  if (page.url().endsWith("/results")) await page.getByRole("button", { name: /Bananas/ }).first().click();
+  expect(starts).toEqual([]); // unknown position cannot start directions
+  await page.getByRole("button", { name: "I'm at the store entrance — get directions" }).click();
+  await expect(page.getByText("Walk forward to the shelf.", { exact: true })).toBeFocused();
+  await page.getByRole("button", { name: "I completed this step — Next" }).click();
+  await expect(page.getByRole("heading", { name: "You have arrived" })).toBeVisible();
+  expect(starts).toEqual(["N01", "N09"]); // re-reads current product placement each step
+});
