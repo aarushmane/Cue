@@ -27,6 +27,7 @@ export default defineConfig({
     reuseExistingServer: REUSE_SERVER,
     timeout: 120_000,
     // Memory mode, with a known staff token for the API route tests (tests/e2e/api.spec.ts).
-    env: { NEXT_PUBLIC_SUPABASE_URL: "", NEXT_PUBLIC_SUPABASE_ANON_KEY: "", STAFF_DEMO_TOKEN: process.env.STAFF_DEMO_TOKEN || "e2e-staff" },
+    // OBSERVATION_RATE_LIMIT: every test shares one client address, so lift the per-minute cap for the suite.
+    env: { NEXT_PUBLIC_SUPABASE_URL: "", NEXT_PUBLIC_SUPABASE_ANON_KEY: "", STAFF_DEMO_TOKEN: process.env.STAFF_DEMO_TOKEN || "e2e-staff", OBSERVATION_RATE_LIMIT: "1000" },
   },
 });

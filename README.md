@@ -86,7 +86,7 @@ Only the agent's own inputs and outputs are sent: the prompt, tool arguments and
 ## Supabase setup
 
 1. Create a project and copy its URL and anon key into `.env.local`.
-2. In the SQL editor, run `supabase/migrations/001_init.sql`, then `002_tracks.sql`, `003_adaptive_inventory.sql`, `004_review_v4.sql`, then `supabase/seed.sql`. `npm run test:db` applies all of them to a throwaway Postgres in Docker and runs `supabase/tests/`.
+2. In the SQL editor, run `supabase/migrations/001_init.sql`, then `002_tracks.sql` through `006_rls_recursion_fix.sql` in order, then `supabase/seed.sql`. `npm run test:db` applies all of them to a throwaway Postgres in Docker and runs `supabase/tests/`; without Docker, point it at any Postgres 16 with `TEST_DB_URL=postgres://postgres@localhost:5432/postgres npm run test:db` (it creates and drops a scratch `sg_db_test` database).
 3. Create a staff user (Auth → Users), then run `insert into store_staff (store_id, user_id) values ('demo-store', '<user uuid>');`
 
 Once `NEXT_PUBLIC_SUPABASE_URL` is set, the app reads from Supabase instead of the in-memory seed.

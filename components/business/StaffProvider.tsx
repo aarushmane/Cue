@@ -5,7 +5,8 @@
 // (lib/staff/client.ts), which don't return a snapshot, so screens call refresh() after each one. UI-only state (open sheet, unsaved
 // review edits, the floor plan draft being edited) lives here so switching tabs does not lose it.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
-import { getStaffSnapshotDemo, resetDemoDataDemo } from "@/lib/demo/adapter";
+import { resetDemoDataDemo } from "@/lib/demo/adapter";
+import { loadStaffSnapshot } from "@/lib/staff/client";
 import type { DemoFail, StaffSnapshot } from "@/lib/demo/types";
 import type { FloorPlan, ReviewDraft } from "@/lib/types";
 
@@ -119,7 +120,7 @@ export function StaffProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let live = true;
-    getStaffSnapshotDemo()
+    loadStaffSnapshot()
       .then((r) => {
         if (!live) return;
         if (r.ok) setSnap(r.snapshot);
@@ -142,7 +143,7 @@ export function StaffProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refresh = useCallback(async () => {
-    const r = await getStaffSnapshotDemo().catch(() => null);
+    const r = await loadStaffSnapshot().catch(() => null);
     if (!r?.ok) return null;
     setSnap(r.snapshot);
     return r.snapshot;

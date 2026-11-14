@@ -5,7 +5,7 @@
 // They call the in-memory demo backend in lib/db/demoState.ts (the same process-wide state that MemoryRepo serves
 // to shopper search and that the staff API routes write in memory mode). They are NOT durable and there is NO
 // real authentication: the employee is the seeded DEMO_STAFF. Screens that use them keep a "Demo action" label.
-//   getStaffSnapshotDemo  → reads for the manager screens (GET /api/audit + observation/product/map reads: not built)
+//   getStaffSnapshotDemo  → reads for the manager screens in memory mode (Supabase mode: GET /api/staff/snapshot)
 //   saveReviewDraftDemo   → "Save details" on an observation (no route in the contract yet)
 //   resetDemoDataDemo     → More → Reset demo data
 // Staff writes (review, product moves, floor plan) and shopper submissions use the real API routes now

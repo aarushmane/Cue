@@ -3,7 +3,10 @@
 // The routes don't return a fresh StaffSnapshot: callers refresh it (useStaff().refresh) after each write.
 // Client-only.
 import { callJson, jsonInit, type ApiResult } from "../api/client";
+import { signInRequired } from "../auth/config";
 import { staffFetch } from "../auth/staffFetch";
+import { getStaffSnapshotDemo } from "../demo/adapter";
+import type { StaffSnapshot } from "../demo/types";
 import type { FloorPlan, ReviewAction, ReviewDraft, ShelfLevel } from "../types";
 
 const seg = encodeURIComponent;
@@ -31,4 +34,13 @@ export async function publishMap(mapId: string, draft: FloorPlan): Promise<ApiRe
   const saved = await saveMapDraft(mapId, draft);
   if (!saved.ok) return saved;
   return callJson<{ version: number }>(staffFetch(`/api/maps/${seg(mapId)}/publish`, jsonInit("POST")));
+}
+
+/**
+ * The manager screens' data. Supabase mode: GET /api/staff/snapshot as the signed-in employee. Memory mode: the demo
+ * Server Function (same in-memory state the routes read). Same result shape either way.
+ */
+export async function loadStaffSnapshot(): Promise<ApiResult<{ snapshot: StaffSnapshot }>> {
+  if (signInRequired()) return callJson<{ snapshot: StaffSnapshot }>(staffFetch("/api/staff/snapshot", { cache: "no-store" }));
+  return getStaffSnapshotDemo();
 }

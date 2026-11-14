@@ -79,3 +79,30 @@ test("shopper submission route: consent required, then submit and merge", async 
   expect(second.merged).toBe(true);
   expect(second.id).toBe(first.id);
 });
+
+test("staff read routes: auth, store check, filters and the snapshot", async ({ request }) => {
+  for (const url of ["/api/audit?store_id=demo-store", "/api/observations?store_id=demo-store", "/api/maps?store_id=demo-store", "/api/staff/snapshot"]) {
+    expect((await request.get(url)).status(), url).toBe(401);
+  }
+  expect((await request.get("/api/audit", { headers: staff })).status()).toBe(400);
+  expect((await request.get("/api/observations?store_id=demo-store&status=NOPE", { headers: staff })).status()).toBe(400);
+
+  const pending = await (await request.get("/api/observations?store_id=demo-store&status=NEEDS_REVIEW", { headers: staff })).json();
+  expect(pending.observations.length).toBeGreaterThan(0);
+  expect(pending.observations.every((o: { status: string }) => o.status === "NEEDS_REVIEW")).toBe(true);
+
+  await request.post("/api/observations/OBS-102/review", { headers: staff, data: { action: "reject", obs_version: 1, reason: "wrong item" } });
+  const audit = await (await request.get("/api/audit?store_id=demo-store", { headers: staff })).json();
+  expect(audit.events[0]).toMatchObject({ action: "reject", entity_id: "OBS-102" });
+
+  const maps = await (await request.get("/api/maps?store_id=demo-store", { headers: staff })).json();
+  expect(maps.maps.published.shelves.length).toBeGreaterThan(0);
+
+  const snap = await request.get("/api/staff/snapshot", { headers: staff });
+  expect(snap.headers()["cache-control"]).toContain("no-store");
+  const { snapshot } = await snap.json();
+  expect(snapshot.storeId).toBe("demo-store");
+  expect(snapshot.observations.find((o: { id: string }) => o.id === "OBS-102").status).toBe("REJECTED");
+  expect(snapshot.products.length).toBeGreaterThan(0);
+  expect((await request.get("/api/staff/snapshot?store_id=other", { headers: staff })).status()).toBe(403);
+});
