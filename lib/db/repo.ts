@@ -23,6 +23,19 @@ export interface StoreRepo {
 }
 
 // ───────────────────────────── Memory ─────────────────────────────
+// Mutable copy so staff "move product" works in memory mode (and in tests). Resets on server restart.
+const memLocations = seed.DEMO_LOCATIONS.map((l) => ({ ...l }));
+
+/** Memory-mode equivalent of the move_product SQL function. Returns false for unknown product/shelf. */
+export function memoryMoveProduct(productId: string, shelfId: string, level: PublishedProduct["location"]["level"]): boolean {
+  const loc = memLocations.find((l) => l.productId === productId);
+  if (!loc || !seed.DEMO_SHELVES.some((s) => s.id === shelfId)) return false;
+  loc.shelfId = shelfId;
+  loc.level = level;
+  loc.verifiedAt = new Date().toISOString();
+  return true;
+}
+
 class MemoryRepo implements StoreRepo {
   readonly kind = "memory" as const;
 
@@ -49,9 +62,9 @@ class MemoryRepo implements StoreRepo {
     if (storeId !== seed.DEMO_STORE.id) return [];
     const shelves = new Map(seed.DEMO_SHELVES.map((s) => [s.id, s]));
     return seed.DEMO_PRODUCTS.flatMap((p) => {
-      const location = seed.DEMO_LOCATIONS.find((l) => l.productId === p.id);
+      const location = memLocations.find((l) => l.productId === p.id);
       const shelf = location && shelves.get(location.shelfId);
-      return location && shelf ? [{ ...p, location, shelf: { id: shelf.id, aisle: shelf.aisle, section: shelf.section } }] : [];
+      return location && shelf ? [{ ...p, location: { ...location }, shelf: { id: shelf.id, aisle: shelf.aisle, section: shelf.section } }] : [];
     });
   }
 

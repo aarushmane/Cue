@@ -6,10 +6,12 @@ Frozen at hour 2. Changing anything here needs agreement from everyone it affect
 
 | Builder | Owns | Files |
 |---|---|---|
-| A, Business UI | Map editor, uploads, review, inventory, activity | `app/business/**`, `components/business/**`, `components/map/**` |
-| B, Backend | Schema, RLS, auth, API routes, audit, seed, vision calls | `supabase/**`, `app/api/**`, `lib/db/**`, `lib/vision/**`, `lib/auth/**` |
-| C, Navigation | Routing, search, landmark matching logic, shopper state machine | `lib/routing/**`, `lib/search/**`, `lib/localization/**` |
-| D, Shopper UX | Voice in/out, accessible shopper pages, demo QA | `app/shopper/**`, `components/shopper/**`, `lib/speech/**` |
+| A, Business UI | Map editor, uploads, review, inventory, activity, "Import from digital twin" screen | `app/business/**`, `components/business/**`, `components/map/**` |
+| B, Backend + onboarding agent | Schema, RLS, auth, API routes, audit, seed, vision calls, CoStar/Vexcel adapters, deepagents onboarding agent | `supabase/**`, `app/api/**`, `lib/db/**`, `lib/vision/**`, `lib/auth/**`, `lib/costar/**`, `lib/agents/onboarding/**` |
+| C, Navigation | Routing, search, landmark matching, shopper state machine, Matterport sweeps → draft graph, shopper agent tools | `lib/routing/**`, `lib/search/**`, `lib/localization/**`, `lib/twin/**`, `lib/agents/shopper/tools.ts` |
+| D, Shopper UX + field | Voice in/out, accessible shopper pages, shopper agent conversation, Peri business interview, demo QA | `app/shopper/**`, `components/shopper/**`, `lib/speech/**`, `lib/agents/shopper/**` (except tools.ts) |
+
+Track strategy and submission requirements: see `docs/tracks.md`.
 
 ## IDs (demo store)
 
@@ -64,10 +66,11 @@ Response 200:
 `ALREADY_THERE` returns 200. `START_NODE_INVALID` returns 400. `ROUTE_UNAVAILABLE` and `PRODUCT_NOT_PUBLISHED` return 404 with `{ status, reason }`.
 The last step is always the arrival sentence. Each request re-reads the product's location, so a staff move takes effect on the next request.
 
-### `POST /api/localize` (C logic, B route)
-Request: multipart `store_id`, optional `previous_node_id`, optional `lat` and `lng`, and 1–3 `frames` (JPEG ≤ 1 MB each).
+### ✅ `POST /api/localize`
+Request (JSON): `{ "store_id", "previous_node_id"?: string|null, "lat"?, "lng"?, "frames": ["data:image/jpeg;base64,…"] }`. Send 1–3 frames, each ≤ ~1.5 MB.
 Response: `{ "confidence_state": "CONFIRMED|LIKELY|UNKNOWN", "selected_node_id": "N03" | null, "candidate_node_ids": [], "landmark_id": "L03" | null, "evidence": "…" }`
-Return `selected_node_id` only when the state is `CONFIRMED` or `LIKELY`. Frames are not stored.
+The model only names the visible landmark. `lib/vision/matchLandmark.ts#decidePosition` decides the confidence state using map adjacency to `previous_node_id`. Frames are never stored. Returns 503 with `UNKNOWN` when `ANTHROPIC_API_KEY` is missing.
+Shopper flow: call this, then pass the result as `scan` to `/api/agent/shopper`.
 
 ### `POST /api/media` (staff)
 Multipart `store_id`, `shelf_id`, and `file`. Returns `{ media_id, url }`. Video frames are extracted on the client and each frame is posted as an image with `kind=video_frame`.
@@ -98,3 +101,27 @@ Multipart `store_id`, `shelf_id`, and `file`. Returns `{ media_id, url }`. Video
 - Left and right are stated only when derivable (after the first leg, or from a node's known `facingDeg`).
 - Unknown position means no turn-by-turn guidance.
 - Shopper camera frames and audio are never persisted or logged.
+
+## Agents (added for the Amazon, LangChain and CoStar tracks)
+
+Agents can only call the tools listed below. They never write SQL, publish locations, or write directions themselves.
+
+### ✅ Shopper agent: `POST /api/agent/shopper` (Claude tool use, direct SDK, chosen for low latency)
+The server is stateless: the client keeps `nav` and `history` and sends both back each turn.
+Request: `{ nav: ShopperNav, history: MessageParam[], utterance?: string, scan?: LocalizeResult }`. Start with `nav = { store_id }` and `history = []`. `ShopperNav` is defined in `lib/agents/shopper/state.ts`.
+Response: `{ say, agent_text, route_text: string[], choices: string[], ui_state, nav, history }`. Speak `say` at `nav.prefs.speech_rate`. Show `choices` as buttons.
+Tools (`lib/agents/shopper/tools.ts`): `search_products`, `select_product`, `get_position`, `start_route`, `next_step`, `repeat_step`, `previous_step`, `set_preferences`, `report_issue` (writes `shopper_reports` and never edits inventory), `request_help`.
+Rule: route instructions are appended to `say` by the server, verbatim from `planRoute`. The model is told never to phrase directions. Every step re-reads the product location, so a staff move triggers "The store just updated where this item is. Rerouting."
+Returns 503 `AGENT_UNAVAILABLE` without an API key. The UI must still work then: typed search, `/api/routes`, and buttons.
+
+### ✅ Onboarding agent: `POST /api/agent/onboard` (LangChain deepagents, staff only)
+Request: `{ costar_property_id }` with a staff `Authorization: Bearer` token → `{ run_id, source: "costar"|"fixture", draft_id, report, todos, graph_summary, candidates_queued, log }` (not streamed yet).
+Until the real CoStar adapter exists, use `fixture-property-1`. Results are labelled `source: "fixture"`.
+Plan it follows: look up the property (CoStar) → fetch the Matterport model (sweeps, floor plan, panoramas) → convert sweeps to a draft graph (`lib/twin`) → pick landmark panoramas → run the shelf-recognition subagent on panorama crops → write a draft map and NEEDS_REVIEW observations → hand off to staff review.
+Output is always a DRAFT map plus NEEDS_REVIEW observations. Staff publish.
+
+### Digital-twin import (`lib/twin`)
+- Matterport sweep = node (`source: "matterport"`, `sweep_id`). Its floor position is normalized to 0..1 using the floor's bounding box.
+- Sweep neighbors (or line of sight between sweeps closer than 4 m, if neighbors aren't exposed) = edge, with weight = 3D distance in meters.
+- Sweep panoramas = landmark reference images.
+- Vexcel aerial image of the parcel = an outdoor approach segment (parking/drop-off → entrance node), shown to staff for confirmation.
