@@ -21,7 +21,7 @@ curl -X POST localhost:3000/api/routes -H 'content-type: application/json' \
 
 ## AI features
 
-Set `ANTHROPIC_API_KEY` in `.env.local`. All model calls use `claude-opus-5-5` (override with `CLAUDE_MODEL`) and have server-side refusal fallback enabled. Without a key, the agent and localization routes return 503 and the app falls back to typed search and buttons.
+Set `GEMINI_API_KEY` (free tier, Google AI Studio) or `ANTHROPIC_API_KEY` in `.env.local`. With both set, Anthropic wins unless `AI_PROVIDER=gemini`. Gemini uses `gemini-3.1-flash-lite` (override with `GEMINI_MODEL`); Claude uses `claude-opus-5-5` (override with `CLAUDE_MODEL`) with server-side refusal fallback. Every provider goes through the same tools and the same zod validation (`lib/ai/provider.ts`, `lib/ai/structured.ts`). Without any key, the agent and localization routes return 503 and the app falls back to typed search and buttons. The free tier is rate-limited per model per day (`gemini-3.5-flash` measured at 20 requests/day; one onboarding run uses about 8–10), so develop on flash-lite, set `GEMINI_AGENT_MODEL=gemini-3.5-flash` only for the demo recording, and don't loop scans during judging.
 
 ```bash
 # onboarding agent on fixture data (memory mode: set STAFF_DEMO_TOKEN=dev in .env.local)

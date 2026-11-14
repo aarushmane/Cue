@@ -2,10 +2,9 @@
 // The model only *classifies* which landmark is visible; confidence → CONFIRMED / LIKELY / UNKNOWN is decided
 // here in code, together with map adjacency to the previous position. Frames are never stored or logged.
 import { z } from "zod";
-import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { CLAUDE_MODEL, FALLBACK_PARAMS, getClaude, imageSource } from "../ai/claude";
+import { structuredVision, type Piece } from "../ai/structured";
 import type { Landmark, LocalizeResult, StoreGraph } from "../types";
 
 const LandmarkMatch = z.object({
@@ -70,31 +69,23 @@ export async function matchLandmark(args: {
   const near = adjacentNodeIds(graph, previousNodeId);
   const ordered = [...landmarks].sort((a, b) => Number(near.has(b.nodeId)) - Number(near.has(a.nodeId)));
 
-  type Block = { type: "text"; text: string } | { type: "image"; source: ReturnType<typeof imageSource> };
-  const content: Block[] = [{ type: "text", text: "Reference landmarks for this store:" }];
+  const content: Piece[] = [{ text: "Reference landmarks for this store:" }];
   for (const l of ordered) {
-    content.push({ type: "text", text: `Landmark ${l.id}: ${l.description}` });
+    content.push({ text: `Landmark ${l.id}: ${l.description}` });
     const ref = await referenceImage(l.imageUrl);
-    if (ref) content.push({ type: "image", source: imageSource(ref) });
+    if (ref) content.push({ image: ref });
   }
-  content.push({ type: "text", text: `Shopper camera frames (${frames.length}):` });
-  for (const f of frames) content.push({ type: "image", source: imageSource(f) });
+  content.push({ text: `Shopper camera frames (${frames.length}):` });
+  for (const f of frames) content.push({ image: f });
   content.push({
-    type: "text",
     text:
       "Which single reference landmark is clearly visible in the shopper frames? Answer with its id, or null if none is clearly visible. " +
       "Use high confidence only when distinctive text or a unique feature matches. Never guess between two similar landmarks — answer null instead.",
   });
 
-  const res = await getClaude().beta.messages.parse({
-    model: CLAUDE_MODEL,
-    max_tokens: 2000,
-    ...FALLBACK_PARAMS,
-    output_config: { effort: "low", format: betaZodOutputFormat(LandmarkMatch) },
-    messages: [{ role: "user", content }],
-  });
-  if (res.stop_reason === "refusal" || !res.parsed_output) {
+  const match = await structuredVision(LandmarkMatch, content, { maxTokens: 2000, effort: "low" });
+  if (!match) {
     return { confidence_state: "UNKNOWN", selected_node_id: null, candidate_node_ids: [], landmark_id: null, evidence: "Could not analyze the scan." };
   }
-  return decidePosition(res.parsed_output, landmarks, graph, previousNodeId);
+  return decidePosition(match, landmarks, graph, previousNodeId);
 }

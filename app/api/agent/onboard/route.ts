@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { claudeConfigured } from "@/lib/ai/claude";
+import { aiConfigured } from "@/lib/ai/provider";
 import { runOnboarding } from "@/lib/agents/onboarding/agent";
 import { requireStaff } from "@/lib/auth/requireStaff";
 
@@ -11,7 +11,7 @@ const Body = z.object({ costar_property_id: z.string().min(1).max(200) });
 export async function POST(request: Request) {
   const auth = await requireStaff(request, null);
   if (!auth.ok) return Response.json({ error: auth.error }, { status: auth.status });
-  if (!claudeConfigured()) return Response.json({ error: "ANTHROPIC_API_KEY is not set on the server." }, { status: 503 });
+  if (!aiConfigured()) return Response.json({ error: "No AI provider configured (set GEMINI_API_KEY or ANTHROPIC_API_KEY)." }, { status: 503 });
 
   const parsed = Body.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "costar_property_id is required" }, { status: 400 });

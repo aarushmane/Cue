@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { claudeConfigured } from "@/lib/ai/claude";
+import { aiConfigured } from "@/lib/ai/provider";
 import { runShopperTurn } from "@/lib/agents/shopper/agent";
 import { ShopperNav } from "@/lib/agents/shopper/state";
 import { saveShopperReports } from "@/lib/db/writes";
@@ -8,7 +8,7 @@ export const maxDuration = 60;
 
 const Body = z.object({
   nav: ShopperNav,
-  history: z.array(z.any()).max(80).default([]), // Anthropic message params, round-tripped unchanged
+  history: z.array(z.any()).max(80).default([]), // provider-specific message history, round-tripped unchanged
   utterance: z.string().max(500).optional(),
   scan: z
     .object({
@@ -23,7 +23,7 @@ const Body = z.object({
 
 // POST /api/agent/shopper — one conversational turn. The client keeps `nav` and `history` and sends them back.
 export async function POST(request: Request) {
-  if (!claudeConfigured()) {
+  if (!aiConfigured()) {
     return Response.json({ error: "AGENT_UNAVAILABLE", say: "The voice assistant is offline. You can still type a product name and use the buttons." }, { status: 503 });
   }
   const parsed = Body.safeParse(await request.json().catch(() => null));

@@ -73,7 +73,8 @@ export function onboardingTools(run: OnboardingRun) {
         edges: g.edges.length,
         edge_source: g.edgeSource,
         size_m: [Math.round(g.widthM), Math.round(g.heightM)],
-        disconnected_parts: g.components.length,
+        connected_parts: g.components.length,
+        fully_connected: g.components.length === 1,
         warnings: g.warnings,
       });
     },

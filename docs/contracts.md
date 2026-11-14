@@ -69,7 +69,7 @@ The last step is always the arrival sentence. Each request re-reads the product'
 ### ✅ `POST /api/localize`
 Request (JSON): `{ "store_id", "previous_node_id"?: string|null, "lat"?, "lng"?, "frames": ["data:image/jpeg;base64,…"] }`. Send 1–3 frames, each ≤ ~1.5 MB.
 Response: `{ "confidence_state": "CONFIRMED|LIKELY|UNKNOWN", "selected_node_id": "N03" | null, "candidate_node_ids": [], "landmark_id": "L03" | null, "evidence": "…" }`
-The model only names the visible landmark. `lib/vision/matchLandmark.ts#decidePosition` decides the confidence state using map adjacency to `previous_node_id`. Frames are never stored. Returns 503 with `UNKNOWN` when `ANTHROPIC_API_KEY` is missing.
+The model only names the visible landmark. `lib/vision/matchLandmark.ts#decidePosition` decides the confidence state using map adjacency to `previous_node_id`. Frames are never stored. Returns 503 with `UNKNOWN` when no AI provider key (`GEMINI_API_KEY` or `ANTHROPIC_API_KEY`) is set.
 Shopper flow: call this, then pass the result as `scan` to `/api/agent/shopper`.
 
 ### `POST /api/media` (staff)
@@ -111,7 +111,7 @@ The server is stateless: the client keeps `nav` and `history` and sends both bac
 Request: `{ nav: ShopperNav, history: MessageParam[], utterance?: string, scan?: LocalizeResult }`. Start with `nav = { store_id }` and `history = []`. `ShopperNav` is defined in `lib/agents/shopper/state.ts`.
 Response: `{ say, agent_text, route_text: string[], choices: string[], ui_state, nav, history }`. Speak `say` at `nav.prefs.speech_rate`. Show `choices` as buttons.
 Tools (`lib/agents/shopper/tools.ts`): `search_products`, `select_product`, `get_position`, `start_route`, `next_step`, `repeat_step`, `previous_step`, `set_preferences`, `report_issue` (writes `shopper_reports` and never edits inventory), `request_help`.
-Rule: route instructions are appended to `say` by the server, verbatim from `planRoute`. The model is told never to phrase directions. Every step re-reads the product location, so a staff move triggers "The store just updated where this item is. Rerouting."
+Rule: on a turn that reads a route step, `say` is ONLY the verbatim `planRoute` text (the model's own words go to `agent_text` for display), because small models paraphrase directions despite being told not to. Every step re-reads the product location, so a staff move triggers "The store just updated where this item is. Rerouting."
 Returns 503 `AGENT_UNAVAILABLE` without an API key. The UI must still work then: typed search, `/api/routes`, and buttons.
 
 ### ✅ Onboarding agent: `POST /api/agent/onboard` (LangChain deepagents, staff only)

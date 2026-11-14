@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { claudeConfigured } from "@/lib/ai/claude";
+import { aiConfigured } from "@/lib/ai/provider";
 import { getRepo } from "@/lib/db/repo";
 import { matchLandmark } from "@/lib/vision/matchLandmark";
 
@@ -21,7 +21,7 @@ export async function POST(request: Request) {
   if (!parsed.success) return Response.json({ error: "store_id and 1–3 frames are required" }, { status: 400 });
   const unknown = (evidence: string) => ({ confidence_state: "UNKNOWN", selected_node_id: null, candidate_node_ids: [], landmark_id: null, evidence });
 
-  if (!claudeConfigured()) return Response.json(unknown("Visual localization is not configured on this server."), { status: 503 });
+  if (!aiConfigured()) return Response.json(unknown("Visual localization is not configured on this server."), { status: 503 });
 
   const { store_id, previous_node_id, frames } = parsed.data;
   const repo = getRepo();
