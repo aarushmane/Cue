@@ -7,15 +7,21 @@
 // to this Server Function when the stream can't be opened.
 import { runOnboarding, type OnboardingResult } from "../agents/onboarding/agent";
 import { DEFAULT_STORE_ID } from "../agents/onboarding/run-context";
-import { checkOnboardingRequest, onboardingFailure } from "./onboard-guard";
+import { acquireOnboardingLock, BUSY, checkOnboardingRequest, onboardingFailure } from "./onboard-guard";
 import type { DemoResult } from "./types";
 
-export async function runOnboardingDemo(propertyId: string, storeId: string = DEFAULT_STORE_ID): Promise<DemoResult<{ result: OnboardingResult }>> {
-  const req = checkOnboardingRequest(propertyId, storeId);
+export async function runOnboardingDemo(
+  propertyId: string, storeId: string = DEFAULT_STORE_ID, passcode?: string,
+): Promise<DemoResult<{ result: OnboardingResult }>> {
+  const req = checkOnboardingRequest(propertyId, storeId, passcode);
   if (!req.ok) return req;
+  const release = acquireOnboardingLock();
+  if (!release) return BUSY;
   try {
     return { ok: true, result: await runOnboarding(req.propertyId, null, { store_id: req.storeId }) };
   } catch (err) {
     return onboardingFailure(err);
+  } finally {
+    release();
   }
 }

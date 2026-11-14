@@ -174,7 +174,9 @@ describe("streamOnboarding (client)", () => {
 
   it("shows refusals the Server Function would repeat, and falls back otherwise", async () => {
     const refusal = Response.json({ ok: false, status: 503, code: "AI_NOT_CONFIGURED", error: "No AI provider" }, { status: 503 });
-    expect(await streamOnboarding({ costar_property_id: "p" }, { onEvent: () => {}, fetchImpl: fetchOf(refusal) })).toEqual({ kind: "error", error: "No AI provider" });
+    expect(await streamOnboarding({ costar_property_id: "p" }, { onEvent: () => {}, fetchImpl: fetchOf(refusal) })).toEqual({ kind: "error", error: "No AI provider", code: "AI_NOT_CONFIGURED" });
+    const busy = Response.json({ ok: false, status: 429, code: "BUSY", error: "Another run" }, { status: 429 });
+    expect(await streamOnboarding({ costar_property_id: "p" }, { onEvent: () => {}, fetchImpl: fetchOf(busy) })).toEqual({ kind: "error", error: "Another run", code: "BUSY" });
     for (const r of [new Response("not found", { status: 404 }), new Response("<html>", { status: 200, headers: { "content-type": "text/html" } }), new TypeError("Failed to fetch")]) {
       expect((await streamOnboarding({ costar_property_id: "p" }, { onEvent: () => {}, fetchImpl: fetchOf(r) })).kind).toBe("fallback");
     }

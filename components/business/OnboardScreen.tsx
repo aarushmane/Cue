@@ -10,7 +10,7 @@ import { asTodos, streamOnboarding, todoAnnouncement, toolLabel, type Todo } fro
 import { runOnboardingDemo } from "@/lib/demo/onboard";
 import { DraftGraphMap } from "@/components/map/DraftGraphMap";
 import { MiniMarkdown } from "./MiniMarkdown";
-import { BackLink, Button, Card, controlClass, DemoTag, H2, ICON, PageHeader } from "./ui";
+import { AlertDialog, BackLink, Button, Card, controlClass, DemoTag, H2, ICON, PageHeader } from "./ui";
 import { useRouter } from "next/navigation";
 
 const PRESETS = [
@@ -41,6 +41,10 @@ function PlanList({ todos }: { todos: Todo[] }) {
 export function OnboardScreen() {
   const router = useRouter();
   const [id, setId] = useState(PRESETS[0].id);
+  const [storeId, setStoreId] = useState("demo-store");
+  const [passcode, setPasscode] = useState("");
+  const [needPasscode, setNeedPasscode] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [result, setResult] = useState<OnboardingResult | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -54,6 +58,7 @@ export function OnboardScreen() {
   const todosRef = useRef<Todo[]>([]);
   const abortRef = useRef<AbortController | null>(null);
   const status = useRef<HTMLParagraphElement>(null);
+  const passRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!busy) return;
@@ -65,8 +70,18 @@ export function OnboardScreen() {
   // Leaving the screen closes the stream, which stops the run on the server.
   useEffect(() => () => abortRef.current?.abort(), []);
 
+  // A refusal that needs the passcode reveals the field and moves focus to it.
+  const refused = (error: string, code?: string) => {
+    setError(error);
+    if (code === "PASSCODE") {
+      setNeedPasscode(true);
+      requestAnimationFrame(() => passRef.current?.focus());
+    }
+  };
+
   const run = async () => {
     if (busy) return;
+    setConfirming(false);
     const ac = new AbortController();
     abortRef.current = ac;
     setBusy(true);
@@ -80,7 +95,7 @@ export function OnboardScreen() {
     todosRef.current = [];
     try {
       const out = await streamOnboarding(
-        { costar_property_id: id },
+        { costar_property_id: id, store_id: storeId, ...(passcode ? { passcode } : {}) },
         {
           signal: ac.signal,
           onEvent: (e) => {
@@ -97,14 +112,14 @@ export function OnboardScreen() {
         },
       );
       if (out.kind === "result") setResult(out.result);
-      else if (out.kind === "error") setError(out.error);
+      else if (out.kind === "error") refused(out.error, out.code);
       else {
         // No stream (e.g. an older server): the Server Function still works, just without live progress.
         setLive(false);
         setNow("");
-        const r = await runOnboardingDemo(id);
+        const r = await runOnboardingDemo(id, storeId, passcode || undefined);
         if (r.ok) setResult(r.result);
-        else setError(r.error);
+        else refused(r.error, r.code);
       }
     } catch {
       if (ac.signal.aborted) return; // unmounted
@@ -146,7 +161,16 @@ export function OnboardScreen() {
             </button>
           ))}
         </div>
-        <Button onClick={run} aria-disabled={busy || undefined} className="self-start">
+        <label htmlFor="ob-store" className="text-[15px] font-bold">Which store is this for?</label>
+        <input id="ob-store" value={storeId} onChange={(e) => setStoreId(e.target.value)} autoComplete="off" aria-describedby="ob-store-hint" className={controlClass} />
+        <p id="ob-store-hint" className="m-0 -mt-1.5 text-sm text-muted">Product suggestions go to this store&apos;s Review queue.</p>
+        {needPasscode && (
+          <>
+            <label htmlFor="ob-pass" className="text-[15px] font-bold">Onboarding passcode</label>
+            <input id="ob-pass" ref={passRef} type="password" value={passcode} onChange={(e) => setPasscode(e.target.value)} autoComplete="off" className={controlClass} />
+          </>
+        )}
+        <Button onClick={() => !busy && setConfirming(true)} aria-disabled={busy || undefined} className="self-start">
           {busy ? `Running… ${elapsed}s` : "Run onboarding agent"}
         </Button>
         <DemoTag />
@@ -261,7 +285,10 @@ export function OnboardScreen() {
               <p className="m-0 text-[15px] text-muted">No shelf products were recognized in this run.</p>
             )}
             <p className="m-0 text-sm text-muted">
-              Suggestions are saved with the draft as NEEDS_REVIEW. Approve products in <Link href="/business/review" className="font-bold text-indigo">Review</Link>.
+              {result.review_observation_ids.length
+                ? `${result.review_observation_ids.length} ${result.review_observation_ids.length === 1 ? "suggestion is" : "suggestions are"} waiting in ${result.store_id}'s Review queue with no shelf chosen. `
+                : "Suggestions are saved with the draft as NEEDS_REVIEW. "}
+              Choose a shelf and approve them in <Link href="/business/review" className="font-bold text-indigo">Review</Link>; nothing is published automatically.
             </p>
           </section>
 
@@ -278,6 +305,20 @@ export function OnboardScreen() {
             </details>
           </section>
         </>
+      )}
+
+      {confirming && (
+        <AlertDialog labelledBy="ob-cf-h" describedBy="ob-cf-b" onClose={() => setConfirming(false)}>
+          <h2 id="ob-cf-h" className="m-0 font-display text-[22px] font-normal text-indigo">Run the onboarding agent?</h2>
+          <p id="ob-cf-b" className="m-0 text-[15px] leading-normal">
+            This uses about 10 AI requests from the shared quota and takes one to three minutes. Only one run can happen at a time.
+            Product suggestions go to {storeId || "demo-store"}&apos;s Review queue; nothing is published.
+          </p>
+          <div className="mt-1.5 flex gap-2.5">
+            <Button variant="dark" className="flex-1 px-2" onClick={() => setConfirming(false)}>Cancel</Button>
+            <Button className="flex-1 px-2" onClick={run}>Run agent</Button>
+          </div>
+        </AlertDialog>
       )}
     </>
   );

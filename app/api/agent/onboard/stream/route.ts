@@ -1,22 +1,25 @@
 import { runOnboardingStream } from "@/lib/agents/onboarding/agent";
 import { encodeEvent, type OnboardEvent } from "@/lib/agents/onboarding/progress";
-import { checkOnboardingRequest, onboardingFailure } from "@/lib/demo/onboard-guard";
+import { acquireOnboardingLock, BUSY, checkOnboardingRequest, onboardingFailure } from "@/lib/demo/onboard-guard";
 
 // A run takes one to three minutes.
 export const maxDuration = 300;
 
 /**
  * POST /api/agent/onboard/stream — the staff onboarding screen's live view of a run. Same rules as the
- * runOnboardingDemo Server Function: memory mode only, no staff session (demo). Body: { costar_property_id, store_id? }.
+ * runOnboardingDemo Server Function: memory mode only, no staff session (demo), ONBOARD_PASSCODE when set, one run
+ * at a time (429 BUSY). Body: { costar_property_id, store_id?, passcode? }.
  *
  * Refusals (Supabase configured, no AI provider, invalid input) are plain JSON with an HTTP status, before any
  * streaming. Otherwise the response is Server-Sent Events: {type:"todos"} and {type:"tool"} while the agent works,
  * then exactly one {type:"result", result: OnboardingResult} or {type:"error"}. Closing the connection stops the run.
  */
 export async function POST(request: Request) {
-  const body = (await request.json().catch(() => null)) as { costar_property_id?: unknown; store_id?: unknown } | null;
-  const req = checkOnboardingRequest(body?.costar_property_id, body?.store_id ?? undefined);
+  const body = (await request.json().catch(() => null)) as { costar_property_id?: unknown; store_id?: unknown; passcode?: unknown } | null;
+  const req = checkOnboardingRequest(body?.costar_property_id, body?.store_id ?? undefined, body?.passcode);
   if (!req.ok) return Response.json(req, { status: req.status });
+  const release = acquireOnboardingLock();
+  if (!release) return Response.json(BUSY, { status: BUSY.status });
 
   const encoder = new TextEncoder();
   const cancelled = new AbortController();
@@ -44,6 +47,7 @@ export async function POST(request: Request) {
         send({ type: "error", error: signal.aborted ? "The run was stopped." : onboardingFailure(err).error });
       } finally {
         clearInterval(ping);
+        release();
         open = false;
         try {
           controller.close();

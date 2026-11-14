@@ -146,12 +146,13 @@ export const ONBOARD_STREAM_URL = "/api/agent/onboard/stream";
 
 export type StreamOutcome =
   | { kind: "result"; result: OnboardingResult }
-  | { kind: "error"; error: string }
+  /** `code` is set for refusals before the run starts (e.g. "PASSCODE", "BUSY"). */
+  | { kind: "error"; error: string; code?: string }
   /** The stream could not be opened (route missing, network, unexpected response): use the Server Function. */
   | { kind: "fallback"; reason: string };
 
 /** Refusals that the Server Function would give too, so falling back would only repeat them. */
-const REFUSALS = new Set(["BACKEND_NOT_CONNECTED", "AI_NOT_CONFIGURED", "INVALID"]);
+const REFUSALS = new Set(["BACKEND_NOT_CONNECTED", "AI_NOT_CONFIGURED", "INVALID", "BUSY", "PASSCODE", "PASSCODE_NOT_SET"]);
 
 /**
  * POST the run and read its events. Progress events go to `onEvent`; the terminal event is returned. Falls back
@@ -159,7 +160,7 @@ const REFUSALS = new Set(["BACKEND_NOT_CONNECTED", "AI_NOT_CONFIGURED", "INVALID
  * agent never runs twice (and never queues its suggestions twice). Aborting `signal` rejects with an AbortError.
  */
 export async function streamOnboarding(
-  body: { costar_property_id: string; store_id?: string },
+  body: { costar_property_id: string; store_id?: string; passcode?: string },
   io: { onEvent: (e: OnboardEvent) => void; signal?: AbortSignal; fetchImpl?: typeof fetch },
 ): Promise<StreamOutcome> {
   let res: Response;
@@ -176,7 +177,7 @@ export async function streamOnboarding(
   }
   if (!res.ok) {
     const j = (await res.json().catch(() => null)) as { code?: string; error?: string } | null;
-    if (j?.code && REFUSALS.has(j.code) && j.error) return { kind: "error", error: j.error };
+    if (j?.code && REFUSALS.has(j.code) && j.error) return { kind: "error", error: j.error, code: j.code };
     return { kind: "fallback", reason: `HTTP ${res.status}` };
   }
   if (!res.body || !(res.headers.get("content-type") ?? "").includes("text/event-stream")) return { kind: "fallback", reason: "not an event stream" };
