@@ -10,7 +10,7 @@ function MorePage() {
   const items = [
     { href: "/business/inventory", label: "Inventory", sub: `${snap.products.length} products · move and publish`, Icon: Package },
     { href: "/business/activity", label: "Activity", sub: `${snap.audit.length} events`, Icon: History },
-    { href: "/staff/inventory", label: "Shopper sightings", sub: "Changes suggested by shopper camera scans", Icon: Camera },
+    { href: "/business/sightings", label: "Shopper sightings", sub: "Changes suggested by shopper camera scans", Icon: Camera },
   ];
   return (
     <>

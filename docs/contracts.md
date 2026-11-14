@@ -74,7 +74,7 @@ Shopper flow: call this, then pass the result as `scan` to `/api/agent/shopper`.
 The same vision call also lists products visible in the frames; they feed the adaptive inventory below (text only).
 
 ### ✅ Adaptive inventory (staff): `GET /api/inventory`, `GET /api/inventory/suggestions`, `POST /api/inventory/suggestions/:id`
-Shopper scans → `lib/inventory/reconcile.ts#planScan` → suggestions → staff approve → published list. UI: `/staff/inventory`.
+Shopper scans → `lib/inventory/reconcile.ts#planScan` → suggestions → staff approve → published list. UI: `/business/sightings` (memory mode via `lib/demo/sightings.ts`; `/staff/inventory` redirects there).
 - Seen at its listed shelf → `last_seen_at` refreshed, `miss_count` reset, any open "possibly gone" suggestion auto-resolves. No approval: nothing shoppers see changes.
 - Not listed → `NEW_PRODUCT` (queued after 1 sighting). Listed elsewhere → `MOVED` (2). Shelf in view, other items on it seen, this one not → `MISSING` (3). Below the threshold a suggestion is `COLLECTING`; at it, `PENDING`.
 - Shelf comes from the map (shelves anchored at the shopper's node), never from the image. MOVED/MISSING only when the shopper stands at the shelves, not from a walkway.

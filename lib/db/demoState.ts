@@ -312,3 +312,13 @@ export function publishMap(mapId: string, actor: StaffMember): Ok<{ maps: StoreM
 }
 
 export const aisleName = (aisle: string) => AISLE_NAMES[aisle] ?? "";
+
+// ───────────────────────────── Shared audit ─────────────────────────────
+
+/** Append an event to the Activity feed from another in-memory module (e.g. adaptive-inventory approvals). */
+export function recordAudit(e: Omit<AuditEvent, "id" | "created_at"> & { created_at?: string }): AuditEvent {
+  const state = db();
+  const event: AuditEvent = { ...e, id: nextEventId(), created_at: e.created_at ?? new Date().toISOString() };
+  state.audit = [event, ...state.audit];
+  return clone(event);
+}

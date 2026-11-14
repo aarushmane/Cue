@@ -16,8 +16,8 @@ const NAV = [
   { href: "/business/review", label: "Review", Icon: Sparkles, match: (p: string) => p.startsWith("/business/review") },
   {
     href: "/business/more", label: "More", Icon: Menu,
-    // Inventory and Activity live under More and highlight More.
-    match: (p: string) => ["/business/more", "/business/inventory", "/business/activity"].some((x) => p.startsWith(x)),
+    // Inventory, Activity and Shopper sightings live under More and highlight More.
+    match: (p: string) => ["/business/more", "/business/inventory", "/business/activity", "/business/sightings"].some((x) => p.startsWith(x)),
   },
 ];
 

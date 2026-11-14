@@ -1,8 +1,6 @@
-import type { Metadata } from "next";
-import { InventoryReview } from "./InventoryReview";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "Inventory · StoreGuide staff" };
-
+// The shopper-sightings review now lives in the manager app, in the shared design.
 export default function Page() {
-  return <InventoryReview />;
+  redirect("/business/sightings");
 }

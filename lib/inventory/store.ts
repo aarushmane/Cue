@@ -60,7 +60,10 @@ export function topShelf(counts: Record<string, number>): string | null {
 }
 
 // ───────────────────────────── Memory ─────────────────────────────
-const mem: Suggestion[] = [];
+// On globalThis (like lib/db/demoState.ts) so API routes and server actions, which Next may bundle separately,
+// share one queue in the server process.
+const G = globalThis as unknown as { __storeguideSuggestions?: Suggestion[] };
+const mem: Suggestion[] = (G.__storeguideSuggestions ??= []);
 
 function memApplyScan(storeId: string, plan: ScanPlan): number {
   const now = new Date().toISOString();
