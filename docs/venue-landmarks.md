@@ -2,9 +2,9 @@
 
 Visual localization (`POST /api/localize`, `lib/vision/matchLandmark.ts`) asks the model which **one** reference landmark is visible in 1–3 camera frames. The model is told to answer `null` rather than guess between similar landmarks, and code (`decidePosition`) turns its confidence into CONFIRMED / LIKELY / UNKNOWN. So localization is only as good as how **distinct** the landmarks are.
 
-## Why the current descriptions will struggle
+## Why the old descriptions struggled
 
-`DEMO_LANDMARKS` (lib/seed/demo-store.ts) today:
+`DEMO_LANDMARKS` (lib/seed/demo-store.ts) before this change:
 
 | id | node | description |
 |---|---|---|
@@ -20,7 +20,9 @@ Problems:
 3. **Color is said once, at the end.** Color is the feature that survives blur, distance and low light best, so it should come first.
 4. **No reference photos exist** (`public/demo/landmarks/` is empty), so matching uses text only.
 
-## Proposed signs (make these, then update the descriptions)
+## The signs (applied to `DEMO_LANDMARKS` and `supabase/seed.sql`)
+
+**Print them from `/signs`** (`npm run dev` → http://localhost:3000/signs → Print: A4 landscape, one sign per page, or scale to A3). The page shows each sign with the exact description the model gets.
 
 Each sign differs from every other on **five channels**: color, shape, numeral, word, icon. Any two of them are enough for a confident match on a partial view.
 
@@ -36,7 +38,7 @@ Rules that keep it working:
 - Lead every description with the **color and shape in capitals**, then the big text, then the icon, then "the only …". The model weighs the start of each line most.
 - Use only words that are **actually printed** on the sign, in quotes. The model matches legible text with high confidence.
 - Don't reuse a color anywhere else in view (no red fire-safety poster next to the yellow sign).
-- When the signs change, update `DEMO_LANDMARKS` and run `npm run seed:sql` so Supabase gets the same descriptions.
+- If a sign changes, update both `app/signs/page.tsx` and `DEMO_LANDMARKS`, then run `npm run seed:sql` so Supabase gets the same descriptions.
 
 ## Reference photos
 

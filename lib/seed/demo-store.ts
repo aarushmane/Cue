@@ -107,12 +107,15 @@ export const DEMO_SHELVES: Shelf[] = Object.entries(AISLES).flatMap(([aisle, a])
   }),
 );
 
+// Physical signs for the venue demo: each differs on color, shape, number, word and icon, mounted 1.2–1.5 m off
+// the floor (phone height). Descriptions lead with color + shape and quote only printed text. See
+// docs/venue-landmarks.md; after changing them run `npm run seed:sql`.
 export const DEMO_LANDMARKS: Landmark[] = [
-  { id: "L01", nodeId: "N01", description: "Entrance doors with a green STOREGUIDE welcome sign", imageUrl: "/demo/landmarks/L01.jpg" },
-  { id: "L02", nodeId: "N02", description: "Hanging sign reading AISLE 1 – PRODUCE & BAKERY (red)", imageUrl: "/demo/landmarks/L02.jpg" },
-  { id: "L03", nodeId: "N03", description: "Hanging sign reading AISLE 2 – DAIRY (blue)", imageUrl: "/demo/landmarks/L03.jpg" },
-  { id: "L04", nodeId: "N04", description: "Hanging sign reading AISLE 3 – PANTRY (yellow)", imageUrl: "/demo/landmarks/L04.jpg" },
-  { id: "L05", nodeId: "N05", description: "Help desk counter with a bell and a HELP sign", imageUrl: "/demo/landmarks/L05.jpg" },
+  { id: "L01", nodeId: "N01", description: 'GREEN rectangular banner on the entrance doors reading "WELCOME TO STOREGUIDE" in white capitals, with a shopping-cart icon. The only green sign.', imageUrl: "/demo/landmarks/L01.jpg" },
+  { id: "L02", nodeId: "N02", description: 'RED SQUARE sign with a huge white number 1 and the words "PRODUCE & BAKERY", apple icon. The only red sign and the only square one.', imageUrl: "/demo/landmarks/L02.jpg" },
+  { id: "L03", nodeId: "N03", description: 'BLUE ROUND sign with a huge white number 2 and the word "DAIRY", milk-carton icon. The only round sign.', imageUrl: "/demo/landmarks/L03.jpg" },
+  { id: "L04", nodeId: "N04", description: 'YELLOW TRIANGLE sign, point up, with a huge black number 3 and the word "PANTRY", tin-can icon. The only triangular sign.', imageUrl: "/demo/landmarks/L04.jpg" },
+  { id: "L05", nodeId: "N05", description: 'ORANGE sign reading "HELP" with a question-mark icon, standing on a counter next to a silver call bell. The only orange sign.', imageUrl: "/demo/landmarks/L05.jpg" },
 ];
 
 type SeedProduct = Omit<Product, "storeId"> & { shelfId: string; level: ShelfLevel };
