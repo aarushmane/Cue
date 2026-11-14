@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { carryPosition, isGuiding, MAX_SEND_HISTORY, nearestRate, needsPosition, postTurn, prefsPatch, toNavPrefs, trimForSend } from "@/components/shopper/guide";
+import { carryPosition, helpDeskText, isGuiding, locationText, nodeLabel, MAX_SEND_HISTORY, nearestRate, needsPosition, postTurn, prefsPatch, toNavPrefs, trimForSend } from "@/components/shopper/guide";
 
 describe("shopper agent client helpers", () => {
   it("maps settings to agent prefs", () => {
@@ -100,5 +100,20 @@ describe("trimForSend", () => {
 
   it("starts fresh when there is no safe cut point", () => {
     expect(trimForSend(Array(70).fill(toolResult))).toEqual([]);
+  });
+});
+
+describe("places in words", () => {
+  it("labels nodes and positions by confidence", () => {
+    expect(nodeLabel("N01")).toBe("the entrance");
+    expect(nodeLabel("nope")).toBeNull();
+    expect(locationText({ store_id: "s", current_node_id: "N01", position_confidence: "CONFIRMED" })).toBe("near the entrance");
+    expect(locationText({ store_id: "s", current_node_id: "N01", position_confidence: "LIKELY" })).toBe("probably near the entrance");
+    expect(locationText({ store_id: "s", current_node_id: "N01", position_confidence: "UNKNOWN" })).toBeNull();
+  });
+  it("describes the help desk from its map position", () => {
+    expect(helpDeskText()).toBe("The help desk is at the front of the store, on the far right as you come in.");
+    expect(helpDeskText([{ id: "X", x: 0.1, y: 0.1, kind: "service", label: "desk" }])).toBe("The help desk is at the back of the store, on the left as you come in.");
+    expect(helpDeskText([])).toBe("Ask any staff member for help.");
   });
 });

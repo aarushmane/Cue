@@ -95,7 +95,8 @@ export default function DestinationPage() {
           onClick={async () => {
             if (s.guide.busy) return;
             s.resetGuide(); // keeps a known position, so a shopper who already scanned isn't asked to scan again
-            const r = await s.sendTurn({ utterance: `Take me to ${[p.brand, p.name, p.size].filter(Boolean).join(" ")}` });
+            // announce: false: on success we go to the guide screen, which announces the reply by focusing it.
+            const r = await s.sendTurn({ utterance: `Take me to ${[p.brand, p.name, p.size].filter(Boolean).join(" ")}` }, { announce: false });
             // On failure stay here: the error is spoken, and the shelf location above still works.
             if (r === "ok") router.push("/shopper/guide");
           }}

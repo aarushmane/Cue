@@ -43,7 +43,9 @@ interface ShopperCtx {
   setPrefs: (p: Partial<Prefs>) => void;
   t: Theme;
   live: string;
-  say: (text: string, rate?: number) => void;
+  /** Speak (if enabled) and announce in the polite live region. `announce: false` skips the live region: used when
+   *  focus is moved to the text instead, so screen readers read it once, not twice. */
+  say: (text: string, rate?: number, opts?: { announce?: boolean }) => void;
   msg: { text: string; err: boolean };
   setMsg: (text: string, err?: boolean) => void;
   q: string;
@@ -66,8 +68,10 @@ interface ShopperCtx {
   guide: GuideView;
   /** Voice entry point: sends the utterance to the agent; falls back to plain search when the agent is offline. */
   ask: (text: string) => Promise<void>;
-  /** One agent turn (utterance and/or scan result). `speakErrors: false` shows an error without speaking it. */
-  sendTurn: (turn: GuideTurn, opts?: { speakErrors?: boolean }) => Promise<TurnResult>;
+  /** One agent turn (utterance and/or scan result). `speakErrors: false` shows an error without speaking it.
+   *  `announce` (default: on unless the shopper is on the guide screen) puts a successful reply in the live region;
+   *  the guide screen announces it by moving focus to it instead. */
+  sendTurn: (turn: GuideTurn, opts?: { speakErrors?: boolean; announce?: boolean }) => Promise<TurnResult>;
   /** Start a new conversation. Keeps a known position (downgraded to LIKELY) so the shopper needn't scan again. */
   resetGuide: () => void;
 }
@@ -86,10 +90,12 @@ export interface GuideView {
   /** What the shopper said last, shown above the reply. */
   heard: string;
   error: string;
+  /** Increases with every applied reply (never reset), so the guide screen can focus each new reply exactly once. */
+  replyId: number;
 }
 
 const freshGuide = (): GuideView => ({
-  online: null, busy: false, nav: { store_id: STORE_ID }, say: "", agentText: "", routeText: [], choices: [], heard: "", error: "",
+  online: null, busy: false, nav: { store_id: STORE_ID }, say: "", agentText: "", routeText: [], choices: [], heard: "", error: "", replyId: 0,
 });
 
 const Ctx = createContext<ShopperCtx | null>(null);
@@ -128,6 +134,7 @@ export function ShopperProvider({ children }: { children: ReactNode }) {
   const guideRef = useRef<{ nav: GuideNav; history: unknown[]; busy: boolean; online: boolean | null }>({
     nav: { store_id: STORE_ID }, history: [], busy: false, online: null,
   });
+  const replySeq = useRef(0);
   const prefsRef = useRef(prefs);
   // Current path for decisions made after an await (the closure's `path` can be stale by then).
   const pathRef = useRef(path);
@@ -166,8 +173,8 @@ export function ShopperProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const say = useCallback((text: string, rateOverride?: number) => {
-    setLive(text);
+  const say = useCallback((text: string, rateOverride?: number, opts: { announce?: boolean } = {}) => {
+    if (opts.announce !== false) setLive(text);
     const p = prefsRef.current;
     // Skipped while the mic is listening (see speech.ts), so the app never transcribes its own voice.
     if (p.speak) speak(text, rateOverride ?? p.rate);
@@ -239,7 +246,7 @@ export function ShopperProvider({ children }: { children: ReactNode }) {
   }, [selected]);
 
   const sendTurn = useCallback(
-    async (turn: GuideTurn, opts: { speakErrors?: boolean } = {}): Promise<TurnResult> => {
+    async (turn: GuideTurn, opts: { speakErrors?: boolean; announce?: boolean } = {}): Promise<TurnResult> => {
       const g = guideRef.current;
       if (g.busy) return "busy";
       g.busy = true;
@@ -263,11 +270,14 @@ export function ShopperProvider({ children }: { children: ReactNode }) {
       g.online = true;
       const patch = prefsPatch(sentPrefs, reply.nav.prefs);
       if (patch) setPrefs(patch);
+      replySeq.current += 1;
+      const replyId = replySeq.current;
       setGuide((v) => ({
         ...v, online: true, busy: false, nav: reply.nav, say: reply.say, agentText: reply.agent_text,
-        routeText: reply.route_text, choices: reply.choices, error: "",
+        routeText: reply.route_text, choices: reply.choices, error: "", replyId,
       }));
-      say(reply.say, reply.nav.prefs?.speech_rate);
+      const announce = opts.announce ?? pathRef.current !== "/shopper/guide";
+      say(reply.say, reply.nav.prefs?.speech_rate, { announce });
       return "ok";
     },
     [say, setPrefs],
@@ -285,7 +295,8 @@ export function ShopperProvider({ children }: { children: ReactNode }) {
       if (!offline()) {
         // Off the guide screen a failure falls back to plain search below, which speaks its own result: don't speak the
         // agent's error first (it would be cut off mid-sentence).
-        const r = await sendTurn({ utterance }, { speakErrors: pathRef.current === "/shopper/guide" });
+        // A successful reply always ends on the guide screen, which announces it by focusing it.
+        const r = await sendTurn({ utterance }, { speakErrors: pathRef.current === "/shopper/guide", announce: false });
         if (r === "ok") {
           if (pathRef.current !== "/shopper/guide") router.push("/shopper/guide");
           return;
@@ -309,7 +320,7 @@ export function ShopperProvider({ children }: { children: ReactNode }) {
     const { online, nav: old } = guideRef.current;
     const nav: GuideNav = { store_id: STORE_ID, ...carryPosition(old) };
     guideRef.current = { nav, history: [], busy: false, online };
-    setGuide({ ...freshGuide(), online, nav });
+    setGuide({ ...freshGuide(), online, nav, replyId: replySeq.current });
   }, []);
 
   const aux = useCallback(

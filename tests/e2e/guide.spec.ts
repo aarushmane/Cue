@@ -87,7 +87,7 @@ test("a known position survives New search, and Get directions reuses it", async
 
   // New conversation, same place: everything below is client-side navigation (no reload).
   await page.getByRole("button", { name: "‹ New search" }).click();
-  await expect(page.getByText("Your location: Found")).toBeVisible();
+  await expect(page.getByText("Your location: probably near the front of the walkway between Aisles 2 and 3")).toBeVisible();
   await page.getByLabel("Type a product").fill("bananas");
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await expect(page).toHaveURL(/\/shopper\/(destination|results)$/);
@@ -113,4 +113,96 @@ test("Get directions failure stays on the destination screen", async ({ page }) 
   await expect(page.locator("main").getByText("Sorry, something went wrong.")).toBeVisible();
   await expect(page).toHaveURL(/\/shopper\/destination$/);
   await expect(page.getByRole("button", { name: "Get directions" })).toBeVisible(); // can retry
+});
+
+// ───────────────────────────── Screen-reader behaviour and end states ─────────────────────────────
+
+const reply = (over: Record<string, unknown>, nav: Record<string, unknown>) => ({
+  say: "ok", agent_text: "ok", route_text: [], choices: [], history: [], ...over,
+  ui_state: nav.state, nav: { ...base, ...nav },
+});
+const focusedText = (page: import("@playwright/test").Page) => page.evaluate(() => document.activeElement?.textContent ?? "");
+const liveText = (page: import("@playwright/test").Page) => page.locator("p[role=status][aria-live=polite]").first().textContent();
+
+test("a new reply gets focus and is not also put in the live region (announced once)", async ({ page }) => {
+  await page.route("**/api/agent/shopper", (route) =>
+    route.fulfill({ json: reply({ say: "Walk forward to the main corridor.", agent_text: "Starting directions.", route_text: ["Walk forward to the main corridor."] }, { state: "GUIDING", current_node_id: "N01", position_confidence: "LIKELY" }) }),
+  );
+  await page.goto("/shopper/guide");
+  await page.getByLabel("Or type a reply").fill("almond milk");
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect.poll(() => focusedText(page)).toContain("Walk forward to the main corridor.");
+  expect(await focusedText(page)).toContain("Starting directions.");
+  expect(await focusedText(page)).not.toContain("Hear again"); // no controls inside the focus target
+  expect(await liveText(page)).not.toContain("Walk forward to the main corridor.");
+});
+
+test("arriving on the guide screen from Get directions focuses the reply, not the title", async ({ page }) => {
+  await page.route("**/api/agent/shopper", (route) =>
+    route.fulfill({ json: reply({ say: "Walk forward.", agent_text: "Here we go.", route_text: ["Walk forward."] }, { state: "GUIDING", current_node_id: "N01", position_confidence: "LIKELY" }) }),
+  );
+  await page.goto("/shopper");
+  await page.getByLabel("Type a product").fill("bananas");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(page).toHaveURL(/\/shopper\/(destination|results)$/);
+  if (page.url().endsWith("/results")) await page.getByRole("button", { name: /Bananas/ }).first().click();
+  await page.getByRole("button", { name: "Get directions" }).click();
+  await expect(page).toHaveURL(/\/shopper\/guide$/);
+  await expect.poll(() => focusedText(page)).toContain("Walk forward.");
+  expect(await liveText(page)).not.toContain("Walk forward.");
+});
+
+test("ARRIVED shows a You have arrived panel with Find something else and Report a problem", async ({ page }) => {
+  const utterances: string[] = [];
+  await page.route("**/api/agent/shopper", (route) => {
+    utterances.push(route.request().postDataJSON().utterance);
+    return route.fulfill({
+      json: reply({ say: "Silk Unsweetened Almond Milk is on your left, middle shelf.", route_text: ["Silk Unsweetened Almond Milk is on your left, middle shelf."] }, { state: "ARRIVED", current_node_id: "N13", position_confidence: "CONFIRMED" }),
+    });
+  });
+  await page.goto("/shopper/guide");
+  await page.getByLabel("Or type a reply").fill("I'm here");
+  await page.getByRole("button", { name: "Send" }).click();
+  const panel = page.getByRole("region", { name: "You have arrived" });
+  await expect(panel).toBeVisible();
+  await expect(page.getByRole("button", { name: "Next", exact: true })).toHaveCount(0);
+
+  await panel.getByRole("button", { name: "Report a problem" }).click();
+  await expect.poll(() => utterances.at(-1)).toBe("report a problem with this product");
+
+  await panel.getByRole("button", { name: "Find something else" }).click();
+  await expect(page).toHaveURL(/\/shopper$/);
+  await expect(page.getByLabel("Type a product")).toBeFocused();
+  await expect(page.getByText("Your location: probably near")).toBeVisible(); // kept across the new search
+});
+
+test("NEEDS_HELP shows where the help desk is, where you are, and Get Help", async ({ page }) => {
+  await page.route("**/api/agent/shopper", (route) =>
+    route.fulfill({ json: reply({ say: "I'll get you help." }, { state: "NEEDS_HELP", current_node_id: "N02", position_confidence: "CONFIRMED" }) }),
+  );
+  await page.goto("/shopper/guide");
+  await page.getByLabel("Or type a reply").fill("I need a person");
+  await page.getByRole("button", { name: "Send" }).click();
+  const panel = page.getByRole("region", { name: "Help desk" });
+  await expect(panel).toContainText("The help desk is at the front of the store, on the far right as you come in.");
+  await expect(panel).toContainText("You are near the front of the walkway between Aisles 1 and 2.");
+  await expect(page.getByRole("button", { name: "Get Help" })).toHaveCount(1); // the panel's, not a second one
+  await panel.getByRole("button", { name: "Get Help" }).click();
+  await expect(page).toHaveURL(/\/shopper\/help$/);
+});
+
+test("returning to the guide screen later focuses the title, not the old reply again", async ({ page }) => {
+  await page.route("**/api/agent/shopper", (route) =>
+    route.fulfill({ json: reply({ say: "Which one?", agent_text: "Which one?", choices: ["A", "B"] }, { state: "SEARCHING" }) }),
+  );
+  await page.goto("/shopper/guide");
+  await page.getByLabel("Or type a reply").fill("milk");
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect.poll(() => focusedText(page)).toContain("Which one?");
+  await page.getByRole("button", { name: "Get Help" }).click();
+  await expect(page).toHaveURL(/\/shopper\/help$/);
+  await page.waitForTimeout(1200);
+  await page.getByRole("button", { name: "‹ Back" }).click();
+  await expect(page).toHaveURL(/\/shopper\/guide$/);
+  await expect(page.getByRole("heading", { level: 1 })).toBeFocused();
 });

@@ -1,6 +1,7 @@
 // Client side of the shopper agent (POST /api/agent/shopper). The server is stateless: the app keeps `nav` and
 // `history` and sends both back each turn. Pure helpers live here so they can be unit tested without React.
-import type { LocalizeResult } from "@/lib/types";
+import { DEMO_NODES } from "@/lib/seed/demo-store";
+import type { LocalizeResult, MapNode } from "@/lib/types";
 import type { Prefs } from "./ShopperProvider";
 
 export type GuideState = "SEARCHING" | "DESTINATION_SELECTED" | "LOCATING" | "ROUTING" | "GUIDING" | "ARRIVED" | "NEEDS_HELP";
@@ -111,4 +112,30 @@ export function trimForSend(history: unknown[], max = MAX_SEND_HISTORY): unknown
   if (history.length <= max) return history;
   for (let i = history.length - max; i < history.length; i++) if (isPlainUserTurn(history[i])) return history.slice(i);
   return [];
+}
+
+// ───────────────────────────── Places, in words ─────────────────────────────
+
+/** Spoken label of a map point, e.g. "the front of the walkway between Aisles 1 and 2". */
+export const nodeLabel = (id: string | null | undefined, nodes: MapNode[] = DEMO_NODES) =>
+  (id && nodes.find((n) => n.id === id)?.label) || null;
+
+/** "near the entrance" (CONFIRMED), "probably near the entrance" (LIKELY), or null when the position is unknown. */
+export function locationText(nav: GuideNav, nodes: MapNode[] = DEMO_NODES): string | null {
+  const conf = nav.position_confidence ?? "UNKNOWN";
+  const label = nodeLabel(nav.current_node_id, nodes);
+  if (conf === "UNKNOWN" || !label) return null;
+  return `${conf === "LIKELY" ? "probably near" : "near"} ${label}`;
+}
+
+/**
+ * Where the help desk (node kind "service") is, in words, from its position on the plan. The plan is drawn with the
+ * entrance at the bottom (front of the store), so y ≥ 0.5 is the front and x is left/right as you walk in.
+ */
+export function helpDeskText(nodes: MapNode[] = DEMO_NODES): string {
+  const desk = nodes.find((n) => n.kind === "service");
+  if (!desk) return "Ask any staff member for help.";
+  const depth = desk.y >= 0.5 ? "at the front of the store" : "at the back of the store";
+  const side = desk.x > 2 / 3 ? "on the far right as you come in" : desk.x < 1 / 3 ? "on the left as you come in" : "in the middle";
+  return `The help desk is ${depth}, ${side}.`;
 }
