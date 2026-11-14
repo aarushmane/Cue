@@ -31,7 +31,7 @@ Do not display instructions about styling, shortcuts, implementation, or how the
 | Controls | Stable dimensions; 44 × 44 px for viewer icon controls and touch targets. A hover, label, or loading state must not resize the control. |
 | Borders/elevation | One semantic border for separation. Small shadows for floating controls/popovers; no card treatment for whole page sections. |
 | Motion | 120 ms for feedback, 180 ms for transitions. Honor reduced motion; no decorative continuous animation. |
-| Canvas | `--scene-background` and `--scene-material` are the only intentional hex tokens, because Three.js consumes them directly. Lighting values describe illumination, not UI colors. |
+| Canvas | `--scene-background`, `--scene-material` (fallback shading for surfaces no panorama covers) and `--scene-marker` (floor sweep markers and the surface cursor) are the only intentional hex tokens, because Three.js consumes them directly. Lighting values describe illumination, not UI colors. |
 
 The full shadcn semantic contract includes `background/foreground`, `card`, `popover`, `primary`, `secondary`, `muted`, `accent`, `destructive`, `border`, `input`, `ring`, `chart-1…5`, and `sidebar` pairs. Project status tokens add `success` and `warning`. Add new tokens centrally and document their purpose here.
 
@@ -56,7 +56,7 @@ Install future primitives from the same registry/style rather than reimplementin
 
 Every control needs default, hover, focus-visible, active, and disabled states. Async operations need loading, success, and actionable error behavior. Reserve space for changing content. Icon buttons need accessible names; status announcements use live regions. Loading visuals respect reduced motion. Keep focus indicators visible against both light and dark surfaces.
 
-For the scene, mouse/touch dragging changes the camera orientation; keyboard movement applies only while the canvas is focused. Blurring the canvas or window clears held movement keys. Reset view restores the initial camera pose. Fullscreen uses the browser API and reflects its current state. Keep the camera and scene independent of panel or toolbar layout.
+For the scene, mouse/touch dragging changes the camera orientation (grab-style); selecting a floor point travels to the nearest visible sweep; scroll/pinch zooms; free walking stays near the sweep paths and settles onto the nearest sweep when input stops; keyboard movement applies only while the canvas is focused. Blurring the canvas or window clears held movement keys. Reset view restores the initial camera pose. Fullscreen uses the browser API and reflects its current state. Keep the camera and scene independent of panel or toolbar layout.
 
 Use semantic HTML first. Preserve Radix keyboard navigation, focus management, and disabled behavior. Make content wrap without clipping; do not use viewport-scaled typography or negative tracking. Readable labels and clear commands take priority over compactness.
 

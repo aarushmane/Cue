@@ -15,6 +15,7 @@
 
 # next.js
 /.next/
+/.next-auth/
 /out/
 
 # production
@@ -49,3 +50,6 @@ next-env.d.ts
 # Hackathon data (CoStar track): hackathon use only, never commit
 /data/models_index.csv
 /data/costar-kit/
+# Venue photos for localization evals (scripts/eval-localize.mts): local only, never commit
+/data/venue-scans/
+/data/localize-eval*.json

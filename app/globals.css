@@ -94,6 +94,7 @@
   --sidebar-ring: var(--ring);
   --scene-background: #e5e5e5;
   --scene-material: #909090;
+  --scene-marker: #ffffff;
   --duration-fast: 120ms;
   --duration-normal: 180ms;
 }
@@ -122,6 +123,7 @@
   --ring: oklch(0.78 0.12 166);
   --scene-background: #191919;
   --scene-material: #c4c4c4;
+  --scene-marker: #ffffff;
 }
 
 @layer base {

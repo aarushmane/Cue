@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 667" role="img" aria-label="Demo store floor plan: four aisles, entrance bottom left, help desk bottom right">
+  <rect x="5" y="5" width="990" height="657" fill="#f5f8fb" stroke="#94a9bd" stroke-width="6"/>
+  <g fill="#d0dbe6" stroke="#8aa0b6" stroke-width="2" font-family="sans-serif" font-size="28" font-weight="700" text-anchor="middle">
+    <rect x="145" y="117" width="70" height="400"/><text x="180" y="327" fill="#14213d">A1</text>
+    <rect x="365" y="117" width="70" height="400"/><text x="400" y="327" fill="#14213d">A2</text>
+    <rect x="585" y="117" width="70" height="400"/><text x="620" y="327" fill="#14213d">A3</text>
+    <rect x="805" y="117" width="70" height="400"/><text x="840" y="327" fill="#14213d">A4</text>
+  </g>
+  <g font-family="sans-serif" font-size="20" fill="#14213d" font-weight="700">
+    <text x="30" y="610">ENTRANCE</text>
+    <text x="880" y="610">HELP</text>
+  </g>
+</svg>
