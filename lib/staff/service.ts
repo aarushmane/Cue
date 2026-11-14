@@ -15,6 +15,7 @@ import { DEMO_STAFF } from "../seed/demo-review";
 import { DEMO_STORE } from "../seed/demo-store";
 import type { FloorPlan, ObservationCandidate, PublishedProduct, ReviewDraft, ShelfLevel } from "../types";
 import { graphPayload, readStoreMaps } from "./maps";
+import { checklistFailure, failingReviewChecks } from "./validateRows";
 
 export type Out = { status: number; body: Record<string, unknown> };
 export interface Actor { userId: string | null; label: string }
@@ -81,9 +82,9 @@ export async function reviewObservation(id: string, input: ReviewInput, actor: A
   }
   // Contract order: still NEEDS_REVIEW (409) → observation version (409) → validation (422). The 409 checks are
   // repeated under a row lock inside review_observation(); this read only makes a stale request report 409, not 422.
-  const { data: obs, error: obsError } = await db.from("observations").select("candidate_json, review_status, version").eq("id", id).maybeSingle();
+  const { data: obs, error: obsError } = await db.from("observations").select("candidate_json, review_status, version, store_id").eq("id", id).maybeSingle();
   if (obsError) return dbError(obsError);
-  const row = obs as { candidate_json?: Partial<ObservationCandidate>; review_status: string; version: number } | null;
+  const row = obs as { candidate_json?: Partial<ObservationCandidate>; review_status: string; version: number; store_id: string } | null;
   if (!row) return fail(404, "NOT_FOUND", "Observation not found.");
   if (row.review_status !== "NEEDS_REVIEW") {
     return fail(409, "ALREADY_REVIEWED", `This observation is already ${row.review_status.toLowerCase().replace("_", " ")}. It cannot be reviewed again.`);
@@ -93,9 +94,19 @@ export async function reviewObservation(id: string, input: ReviewInput, actor: A
   }
   const d = input.draft;
   if (!d) return fail(422, "INVALID", "Review details are required to publish.", { failing: ["draft"] });
-  // The reviewer's confirmations are required server-side too (the UI's checklist is not trusted).
-  const failing = [!d.idOk && "Product identity verified", !d.locOk && "Exact shelf location verified", !d.name.trim() && "Product name", !d.shelf && "Shelf", !d.match && "Existing inventory match"].filter(Boolean) as string[];
-  if (failing.length) return fail(422, "INVALID", "Server validation failed: " + failing.join("; ").toLowerCase() + ".", { failing });
+  // The full publish checklist, as in memory mode (the UI's copy is not trusted). The DB re-checks shelf, level and
+  // store rules inside review_observation().
+  let fails: ReturnType<typeof failingReviewChecks>;
+  try {
+    const [products, maps] = await Promise.all([new SupabaseRepo(db).listPublishedProducts(row.store_id), readStoreMaps(db, row.store_id)]);
+    fails = failingReviewChecks(row, d, products, maps?.published ?? null);
+  } catch {
+    return fail(500, "DB_ERROR", "The database request failed. Try again.");
+  }
+  if (fails.length) {
+    const { code, error, failing } = checklistFailure(fails);
+    return fail(422, code, error, { failing });
+  }
   const cand = (row.candidate_json ?? {}) as Partial<ObservationCandidate>;
   const edited = EDIT_KEYS.some((k) => (cand[k] || "") !== (d[k] || ""));
   const { data, error } = await db.rpc("review_observation", {
