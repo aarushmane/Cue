@@ -46,7 +46,9 @@ export default function GuidePage() {
     replyBox.current?.focus();
   }, [g.replyId, g.busy]);
   const state = g.nav.state ?? "SEARCHING";
-  const step = g.routeText.length ? g.routeText[g.routeText.length - 1] : "";
+  // say includes server-generated notices (such as rerouting) as well as the route step.
+  const step = g.routeText.length || isGuiding(state) || state === "ARRIVED"
+    ? g.say || g.routeText[g.routeText.length - 1] || "" : "";
   const send = (text: string) => {
     if (!text.trim() || g.busy) return;
     setReply("");
@@ -104,7 +106,7 @@ export default function GuidePage() {
       {state === "ARRIVED" && (
         <section aria-labelledby="arrived-h" className="flex flex-col gap-[0.7em] rounded-[28px] border-[3px] border-(--s-primary) bg-(--s-surface) p-[1.15em]">
           <h2 id="arrived-h" className="m-0 text-[1.5em] leading-[1.2] font-extrabold text-(--s-primary-text)">You have arrived</h2>
-          <p className="m-0 text-[1.05em]">The product should be on the shelf in front of you. If it isn&apos;t there, report it and staff will check.</p>
+          <p className="m-0 text-[1.05em]">Check the shelf described in the last step. If the product isn&apos;t there, report it and staff will check.</p>
           <button
             type="button"
             onClick={() => {
