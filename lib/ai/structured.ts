@@ -4,7 +4,7 @@ import { z } from "zod";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import type { Part } from "@google/genai";
 import { CLAUDE_MODEL, FALLBACK_PARAMS, getClaude, imageSource } from "./claude";
-import { GEMINI_MODEL, getGemini, imagePart, toGeminiSchema } from "./gemini";
+import { geminiModels, getGemini, imagePart, isQuotaError, markExhausted, toGeminiSchema } from "./gemini";
 import { resolveImage } from "./images";
 import { aiProvider } from "./provider";
 
@@ -36,15 +36,28 @@ export async function structuredVision<S extends z.ZodObject>(
 
   if (provider === "gemini") {
     const parts: Part[] = pieces.map((p) => ("text" in p ? { text: p.text } : imagePart(p.image)));
-    const res = await getGemini().models.generateContent({
-      model: GEMINI_MODEL,
-      contents: [{ role: "user", parts }],
-      config: {
-        maxOutputTokens: opts.maxTokens,
-        responseMimeType: "application/json",
-        responseJsonSchema: toGeminiSchema(z.toJSONSchema(schema) as Record<string, unknown>),
-      },
-    });
+    // Free-tier quotas are per model: when one is used up, try the next.
+    let res: Awaited<ReturnType<ReturnType<typeof getGemini>["models"]["generateContent"]>> | null = null;
+    const models = geminiModels();
+    for (const [i, model] of models.entries()) {
+      try {
+        res = await getGemini().models.generateContent({
+          model,
+          contents: [{ role: "user", parts }],
+          config: {
+            maxOutputTokens: opts.maxTokens,
+            responseMimeType: "application/json",
+            responseJsonSchema: toGeminiSchema(z.toJSONSchema(schema) as Record<string, unknown>),
+          },
+        });
+        break;
+      } catch (error) {
+        if (!isQuotaError(error)) throw error;
+        markExhausted(model, error);
+        if (i === models.length - 1) throw error;
+      }
+    }
+    if (!res) return null;
     const text = res.text;
     if (!text) return null;
     try {

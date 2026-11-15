@@ -1,16 +1,10 @@
 // Store onboarding deep agent (LangChain deepagents track + CoStar track).
 // Turns a CoStar property id into a DRAFT accessible-navigation map: property → Matterport twin → walkable graph
 // → landmark references → shelf suggestions (subagent) → saved draft for staff review.
-import { ChatAnthropic } from "@langchain/anthropic";
-import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { awaitAllCallbacks } from "@langchain/core/callbacks/promises";
-import { convertToOpenAITool } from "@langchain/core/utils/function_calling";
 import { createDeepAgent } from "deepagents";
 import { todoListMiddleware } from "langchain";
-import { CLAUDE_MODEL } from "../../ai/claude";
-import { GEMINI_AGENT_MODEL } from "../../ai/gemini";
-import { toGeminiParameters } from "../../ai/geminiSchema";
-import { aiProvider } from "../../ai/provider";
+import { agentChatModel } from "../chatModel";
 import { getDataLayers } from "../../costar";
 import { finishAgentRun, startAgentRun } from "../../db/writes";
 import { extractPlan, runView, type RunView } from "./view";
@@ -37,17 +31,6 @@ and a checklist of what staff must verify before publishing. Never claim the map
 State only facts that tool outputs returned. List exactly the warnings build_draft_graph returned; if fully_connected is false or
 edge_source is "proximity", say staff must fix that. Always include: walk the routes, confirm the entrance, photograph landmarks.`;
 
-/** Gemini rejects parts of JSON Schema that deepagents' built-in tools use; rewrite every tool schema on bind. */
-class GeminiChat extends ChatGoogleGenerativeAI {
-  override bindTools(...[tools, kwargs]: Parameters<ChatGoogleGenerativeAI["bindTools"]>) {
-    const cleaned = tools.map((t) => {
-      const oa = convertToOpenAITool(t);
-      return { ...oa, function: { ...oa.function, parameters: toGeminiParameters(oa.function.parameters) } };
-    });
-    return super.bindTools(cleaned, kwargs);
-  }
-}
-
 // Same env vars @langchain/core checks before attaching the LangSmith tracer.
 const tracingOn = () =>
   ["LANGSMITH_TRACING_V2", "LANGCHAIN_TRACING_V2", "LANGSMITH_TRACING", "LANGCHAIN_TRACING"].some((k) => process.env[k] === "true");
@@ -57,7 +40,7 @@ const tracingOn = () =>
  * LangChain's callback queue and the LangSmith client's pending batches before returning, capped so a slow
  * LangSmith never holds up the staff response for long. No-op (and no LangSmith client created) when tracing is off.
  */
-async function flushTraces(timeoutMs = 10_000) {
+export async function flushTraces(timeoutMs = 10_000) {
   if (!tracingOn()) return;
   let timer: ReturnType<typeof setTimeout> | undefined;
   await Promise.race([
@@ -91,10 +74,7 @@ export interface OnboardingOptions {
 function buildAgent(run: OnboardingRun) {
   const tools = onboardingTools(run);
   // Same deep agent either way; only the chat model changes.
-  const model =
-    aiProvider() === "gemini"
-      ? new GeminiChat({ model: GEMINI_AGENT_MODEL, apiKey: process.env.GEMINI_API_KEY, maxOutputTokens: 8000 })
-      : new ChatAnthropic({ model: CLAUDE_MODEL, maxTokens: 16000 });
+  const model = agentChatModel({ geminiMaxOutputTokens: 8000, anthropicMaxTokens: 16000 });
 
   return createDeepAgent({
     model,
