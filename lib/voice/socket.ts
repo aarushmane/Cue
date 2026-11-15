@@ -72,14 +72,15 @@ class VoiceSocket {
     if (error) { request.audio?.error(error); request.fail(error); }
   }
 
-  private register(id: number, signal: AbortSignal, request: Omit<Pending, "cleanup">) {
+  private register(id: number, signal: AbortSignal, request: Omit<Pending, "cleanup">, timeoutMs = 120_000) {
     const cancel = () => {
       if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify({ id, type: "cancel" }));
       this.finish(id, new DOMException("Interrupted", "AbortError"));
     };
     const timeout = setTimeout(() => {
-      cancel();
-    }, 120_000);
+      if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify({ id, type: "cancel" }));
+      this.finish(id, new Error("The request took too long. Please try again."));
+    }, timeoutMs);
     this.pending.set(id, { ...request, cleanup: () => { clearTimeout(timeout); signal.removeEventListener("abort", cancel); } });
     signal.addEventListener("abort", cancel, { once: true });
     if (signal.aborted) cancel();
@@ -90,7 +91,7 @@ class VoiceSocket {
     signal.throwIfAborted();
     const id = ++this.nextId;
     return new Promise<T>((resolve, reject) => {
-      this.register(id, signal, { result: (data) => resolve(data as T), fail: reject, event });
+      this.register(id, signal, { result: (data) => resolve(data as T), fail: reject, event }, type === "turn" ? 30_000 : 15_000);
       this.socket!.send(JSON.stringify({ id, type, payload }));
     });
   }

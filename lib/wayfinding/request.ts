@@ -4,6 +4,7 @@ import { z } from "zod";
 import { isDemoScene } from "../scenes/demo";
 import { loadScene, ObstacleInput, SceneItemInput } from "./scene";
 import type { StartPoint, Waypoint, WayfindingScene } from "./types";
+import { WAYFINDING_TIMEOUT_MESSAGE } from "./async";
 
 const Vec3 = z.object({ x: z.number(), y: z.number(), z: z.number() });
 
@@ -88,6 +89,7 @@ export class HttpError extends Error {
 }
 
 export function errorResponse(error: unknown) {
+  if (error instanceof Error && error.name === "TimeoutError") return Response.json({ error: WAYFINDING_TIMEOUT_MESSAGE }, { status: 504 });
   if (error instanceof HttpError) return Response.json({ error: error.message }, { status: error.status });
   console.error("wayfinding failed", error);
   return Response.json({ error: "Wayfinding failed. Try again." }, { status: 500 });

@@ -4,6 +4,8 @@ import { clientKey, createLimiter } from "@/lib/api/rateLimit";
 import { runWayfinding } from "@/lib/agents/wayfinding/agent";
 import { errorResponse, sceneFor, toStart, WayfindingBody } from "@/lib/wayfinding/request";
 import { findInPhotos } from "@/lib/wayfinding/vision";
+import { photoSearchQuery } from "@/lib/wayfinding/photoRequest";
+import { WAYFINDING_TIMEOUT_MS, withAbort } from "@/lib/wayfinding/async";
 
 export const maxDuration = 120;
 
@@ -20,12 +22,14 @@ export async function POST(request: Request) {
     return Response.json({ error: "BAD_REQUEST", issues: parsed.success ? [{ message: "Send query." }] : parsed.error.issues.slice(0, 3) }, { status: 400 });
   }
   const body = parsed.data;
+  const signal = AbortSignal.any([request.signal, AbortSignal.timeout(WAYFINDING_TIMEOUT_MS)]);
   try {
-    const scene = await sceneFor(body);
-    const result = await runWayfinding(scene, {
+    const scene = await withAbort(sceneFor(body), signal);
+    const photoQuery = photoSearchQuery(body.query!);
+    const result = await withAbort(runWayfinding(scene, {
       query: body.query!, start: toStart(body.start, scene), detections: body.detections,
-      searchPhotos: (query) => findInPhotos(scene, query),
-    });
+      signal, searchPhotos: body.search_photos || photoQuery !== null ? (query) => findInPhotos(scene, photoQuery || query, { signal }) : undefined,
+    }), signal);
     return Response.json(result);
   } catch (error) {
     // Out of model quota: say so with 503, which makes the page answer through the deterministic route instead.

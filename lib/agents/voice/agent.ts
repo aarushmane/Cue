@@ -13,13 +13,14 @@ import { findItem } from "@/lib/wayfinding/locate";
 import { normalize } from "@/lib/search/matchProducts";
 import { isCategoryQuery, matchCategory } from "@/lib/wayfinding/catalogMatch";
 import { catalogSuggestions, clarificationAnswer, type VoiceClarification } from "@/lib/voice/clarification";
+import { photoSearchQuery } from "@/lib/wayfinding/photoRequest";
 
 const SYSTEM = `You control a stored 3D store simulation for a blind visitor. Use only the provided scene tools.
 Never invent or substitute products, coordinates, distances or directions. Keep the current destination unless the visitor requests another.
 The latest user request is authoritative. Previous conversation is context, never a replacement for the product named in this request.
 Read_position gives heading and measured speed; read_route gives grounded directions. adjust_orientation faces the route or product; set_speed changes simulation walking speed.
 Use find_item and plan_route for a NEW destination only. Never repeat a failed find, locate or plan in the same turn. Ask a short clarification if ambiguous.
-If a new destination is missing from the saved catalog, search the photos once with locate_item before reporting it missing. Never promise an unverified product or silently route to a similar brand.
+If a destination is missing from the saved catalog, say it is not listed. Search photos with locate_item only when the visitor explicitly asks to check the photos or take a closer look. Never promise an unverified product or silently route to a similar brand.
 Complete requested tool work before replying. There is no background task after your final answer: never end with only an acknowledgement such as "I'm on it" or a promise to search later.
 Start guidance only after a valid route and an explicit request to move. Finding/showing draws the route without walking.
 Keep replies to two short sentences. This simulation cannot assess real-world obstacles or safety.`;
@@ -43,16 +44,20 @@ export async function runVoiceAgent(scene: WayfindingScene, request: Request, de
   const query = answer ?? request.query.trim();
   const current = scene.items.find((item) => item.id === request.currentItemId);
   const wantsMovement = movingRequest(query);
-  const photoRequest = /\b(?:photos?|pictures?|scan the|look more closely)\b/i.test(query);
-  const stripped = normalize(query.replace(/\b(?:search|look|check)\s+(?:the\s+)?(?:photos?|pictures?)\s*(?:for)?/ig, ""));
-  const destinationQuery = stripped || (photoRequest ? normalize(request.history?.filter((message) => message.role === "user").at(-1)?.content ?? "") : "");
+  const previousQuery = (request.history ?? []).filter((message) => message.role === "user")
+    .reduce((previous, message) => photoSearchQuery(message.content, previous) ?? normalize(message.content), "");
+  const photoTarget = photoSearchQuery(query, previousQuery);
+  const photoRequest = photoTarget !== null;
+  const destinationQuery = photoTarget ?? normalize(query);
   if (!destinationQuery) return empty("What would you like to find?");
   const match = findItem(destinationQuery, scene.items);
   const candidates = match.status === "MATCH" ? [match.item] : match.status === "AMBIGUOUS" ? match.options
     : isCategoryQuery(destinationQuery) ? matchCategory(scene.items, destinationQuery) : [];
   const refersToCurrent = /^(?:it|there|that|them|that one|same destination|current destination|way|route)$/i.test(destinationQuery);
   const destinationRequest = /\b(?:find|locate|search for|looking for|where(?:s|['’]s| (?:is|are|can|do))|show me|(?:take|guide|bring|navigate|lead|walk) me to|(?:go|head) to|(?:get|fetch) me|i (?:need|want)|i['’]?d like|i would like|do you have|have you got)\b/i.test(query);
-  const newDestination = !refersToCurrent && (answer !== null || photoRequest || candidates.length > 0 || destinationRequest);
+  const bareDestination = destinationQuery.split(" ").length <= 5 && !/^(?:what|who|how|why|when|where|can|could|would|will|do|does|is|are|am|i|im|you|we|my|help|tell|thank|thanks|hello|hi|hey|okay|ok|yes|no|face|orient|align|turn|look|stop|cancel|pause|resume|continue|go|walk|start|slow|slower|faster|speed|directions)\b/i.test(destinationQuery);
+  const newDestination = !refersToCurrent && (answer !== null || photoRequest || candidates.length > 0 || destinationRequest || bareDestination);
+  const catalogMiss = () => ({ ...empty(`I couldn't find ${destinationQuery} in this scan's catalogue.`), resetDestination: true });
   const routeReply = (item: SceneItem, plan: RoutePlan): VoiceResult => {
     request.signal?.throwIfAborted();
     // Saved catalogs may name a shelf group by brand alone. Include the matched
@@ -91,6 +96,7 @@ export async function runVoiceAgent(scene: WayfindingScene, request: Request, de
     }
     const suggestions = !photoRequest && answer === null ? catalogSuggestions(destinationQuery, scene.items) : [];
     if (suggestions.length) return { ...empty(`Did you mean ${suggestions.join(" or ")}?`), clarification: { options: suggestions } };
+    if (!photoRequest) return catalogMiss();
     request.onEvent?.({ type: "progress", stage: "locating", label: "Checking scene photos" });
     const found = await request.searchPhotos?.(destinationQuery);
     request.signal?.throwIfAborted();
@@ -110,7 +116,7 @@ export async function runVoiceAgent(scene: WayfindingScene, request: Request, de
   }
   const keepCurrent = refersToCurrent || /\b(?:route|destination|there|it|distance|far)\b/i.test(query);
   const run: WayfindingRun = { scene: { ...scene, items: [...scene.items] }, start: request.start, detections: [], log: [],
-    onEvent: request.onEvent, searchPhotos: request.searchPhotos, lockedItemId: keepCurrent ? current?.id : undefined,
+    onEvent: request.onEvent, searchPhotos: photoRequest ? request.searchPhotos : undefined, lockedItemId: keepCurrent ? current?.id : undefined,
     searchQuery: keepCurrent ? undefined : destinationQuery };
   if (current && keepCurrent) { run.item = current; run.plan = planRouteToItem(scene, request.start, current); }
   const actions: VoiceAction[] = [];

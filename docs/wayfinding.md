@@ -6,7 +6,7 @@ over the Matterport tour.
 | Step | Code | Notes |
 | --- | --- | --- |
 | Find by name | `lib/wayfinding/locate.ts` `findItem` | Same scoring as shopper product search; asks instead of guessing between equal matches. |
-| Search the photos | `lib/wayfinding/vision.ts` `findInPhotos` | When nothing is mapped: a vision model scans each scan point's 4 horizon photos for the item, each hit is placed on the scan mesh, hits are grouped into places, and each place is checked with a cropped second look. Cached 30 min per query. |
+| Search the photos | `lib/wayfinding/vision.ts` `findInPhotos` | Only after an explicit photo-search request: a vision model scans each scan point's 4 horizon photos for the item, each hit is placed on the scan mesh, hits are grouped into places, and each place is checked with a cropped second look. Cached 30 min per query. |
 | Product catalogue | `lib/wayfinding/catalog.ts` | Brands and products: each photo face is cut into 6 overlapping tiles, enlarged 2×, and the vision model lists the brands it can read with boxes; those are placed on the mesh and grouped per brand. Built once per scan (cached in memory and on disk for a week). |
 | Aisle points | `lib/wayfinding/walkable.ts` | Walkable floor grid from the mesh (10 cm cells; blocked where anything sits 0.15–1.9 m above the floor) and extra standing points about every metre along the aisles, linked where the straight line keeps ≥ 0.24 m clearance. |
 | Find from detections | `locateFromDetections` | Detections → 3D rays from scan points → mesh hit (clustered), else triangulated (≥ 2 sweeps), else the first shelf box. |
@@ -14,6 +14,8 @@ over the Matterport tour.
 | Describe | same, `lib/wayfinding/steps.ts` | Legs with turn text (fixed templates) in approximate steps (0.75 m each: "Turn right and walk about 4 steps."), floor arrows every 0.8 m, facing direction at the end. |
 | Draw | `lib/wayfinding/screen.ts`, `components/scene/RouteOverlay.tsx` | Projects the route with the Showcase SDK camera; edge arrow when the next stretch is off screen. |
 | Agent | `lib/agents/wayfinding/` | LangChain deepagents; tools wrap the steps above. The model never computes geometry. |
+
+Ordinary typed and voice item requests use the saved catalogue, including negative answers. A missing item never automatically launches another image scan. Say “search the photos for pineapple” or, after a missing-item answer, “check the photos” to request that extra work. Explicit searches have a 20-second budget, share concurrent work, and reuse cached results; cancelling the last caller stops the downloads and provider calls. A scene request times out after 25 seconds and the browser after 30 seconds, so a slow provider cannot leave search loading indefinitely.
 
 ## Frames
 

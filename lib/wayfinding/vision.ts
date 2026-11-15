@@ -13,6 +13,7 @@ import { isCategoryQuery, matchCategory, sceneCatalog } from "./catalog";
 import { skyboxTemplates } from "./scene";
 import { findItem, locateFromDetections, surfaceClusters, type Detection } from "./locate";
 import type { SceneItem, WayfindingScene } from "./types";
+import { withAbort } from "./async";
 
 const MAX_SWEEPS = 12;
 const HORIZON_FACES = [1, 2, 3, 4];
@@ -41,10 +42,12 @@ export type PhotoDetection = Detection & {
 };
 
 /** Ask the vision model where `what` appears in each scan point's photos. */
-export async function detectInPhotos(scene: WayfindingScene, what: string): Promise<PhotoDetection[]> {
-  const templates = await skyboxTemplates(scene.modelId);
+export async function detectInPhotos(scene: WayfindingScene, what: string, signal?: AbortSignal): Promise<PhotoDetection[]> {
+  signal?.throwIfAborted();
+  const templates = await (signal ? withAbort(skyboxTemplates(scene.modelId), signal) : skyboxTemplates(scene.modelId));
   // Only sweeps with orientation (from the Model API) can turn a pixel into a ray.
   const sweeps = scene.waypoints.filter((w) => w.rotation && templates.has(w.id)).slice(0, MAX_SWEEPS);
+  let failed = 0;
   const perSweep = await Promise.all(sweeps.map(async (w) => {
     const template = templates.get(w.id)!;
     const result = await structuredVision(Found, [
@@ -56,10 +59,12 @@ export async function detectInPhotos(scene: WayfindingScene, what: string): Prom
           "within that face's image, a short label naming what you see (legible brand or sign text if any), and your confidence. " +
           "Only include things you can actually see. Return an empty list if it is not visible.",
       },
-    ], { maxTokens: 2000, effort: "low" }).catch((error: unknown) => {
+    ], { maxTokens: 2000, effort: "low", signal }).catch((error: unknown) => {
+      signal?.throwIfAborted();
       console.warn(`vision: sweep ${w.id} failed`, error);
       return null;
     });
+    if (!result) failed++;
     return (result?.detections ?? [])
       .slice(0, 20)
       .map((d) => ({ ...d, xmin: clamp(d.xmin), xmax: clamp(d.xmax), ymin: clamp(d.ymin), ymax: clamp(d.ymax), label: d.label.slice(0, 200) }))
@@ -72,7 +77,9 @@ export async function detectInPhotos(scene: WayfindingScene, what: string): Prom
         box: { xmin: d.xmin, ymin: d.ymin, xmax: d.xmax, ymax: d.ymax },
       }));
   }));
-  return perSweep.flat();
+  const detections = perSweep.flat();
+  if (!detections.length && failed) throw new Error("The photos could not be checked. Please try again.");
+  return detections;
 }
 
 const Verdict = z.object({ is_match: z.boolean(), actually: z.string().max(200) });
@@ -81,11 +88,12 @@ const Verdict = z.object({ is_match: z.boolean(), actually: z.string().max(200) 
  * Second look at one detection: crop the box (with context) from its photo and ask a strict yes/no. Catches the
  * detector calling a nearby product category (pastries, candy) the requested one. null = could not check.
  */
-async function verify(d: PhotoDetection, what: string): Promise<{ ok: boolean; actually: string } | null> {
+async function verify(d: PhotoDetection, what: string, signal?: AbortSignal): Promise<{ ok: boolean; actually: string } | null> {
   try {
+    signal?.throwIfAborted();
     const url = new URL(d.image);
     if (!url.hostname.endsWith(".matterport.com")) return null;
-    const response = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+    const response = await fetch(url, { signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(20_000)]) : AbortSignal.timeout(20_000) });
     if (!response.ok) return null;
     const source = Buffer.from(await response.arrayBuffer());
     const { width = 1024, height = 1024 } = await sharp(source).metadata();
@@ -100,9 +108,10 @@ async function verify(d: PhotoDetection, what: string): Promise<{ ok: boolean; a
     const verdict = await structuredVision(Verdict, [
       { image: `data:image/jpeg;base64,${crop.toString("base64")}` },
       { text: `Is the product in the centre of this photo "${what}"? Answer is_match true only if it clearly is ${what}, not a similar product from another category. Say what it actually is.` },
-    ], { maxTokens: 300, effort: "low" });
+    ], { maxTokens: 300, effort: "low", signal });
     return verdict ? { ok: verdict.is_match, actually: verdict.actually } : null;
   } catch (error) {
+    signal?.throwIfAborted();
     console.warn("vision: verification failed", error);
     return null;
   }
@@ -118,7 +127,8 @@ export type VisionFind =
     }
   | { status: "NOT_SEEN" | "UNAVAILABLE"; reason: string; detections: number; rejected?: { actually: string }[] };
 
-const cache = new Map<string, { at: number; ttl: number; value: Promise<VisionFind> }>();
+type SearchEntry = { at: number; ttl: number; value: Promise<VisionFind>; controller: AbortController; users: number; settled: boolean };
+const cache = new Map<string, SearchEntry>();
 const TTL_MS = 30 * 60_000;
 const MAX_CANDIDATES = 4;
 
@@ -128,15 +138,18 @@ const MAX_CANDIDATES = 4;
  * scan mesh → group into places → verify the best places with a cropped second look. Cached per model and query for
  * 30 minutes.
  */
-export function findInPhotos(scene: WayfindingScene, query: string): Promise<VisionFind> {
+export async function findInPhotos(scene: WayfindingScene, query: string, options: { signal?: AbortSignal } = {}): Promise<VisionFind> {
+  options.signal?.throwIfAborted();
   const what = normalize(query) || query.trim().toLowerCase();
   const key = `${scene.modelId}:${what}`;
   const hit = cache.get(key);
-  if (hit && Date.now() - hit.at < hit.ttl) return hit.value;
+  if (hit && !hit.controller.signal.aborted && Date.now() - hit.at < hit.ttl) return consume(hit);
+  const controller = new AbortController();
+  const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)]);
   const name = what.charAt(0).toUpperCase() + what.slice(1);
   const value = (async (): Promise<VisionFind> => {
     // Brands, products and categories: answer from the scan's catalogue (read once from zoomed-in photo tiles).
-    const catalog = await sceneCatalog(scene).catch(() => [] as SceneItem[]);
+    const catalog = await withAbort(sceneCatalog(scene).catch(() => [] as SceneItem[]), signal);
     // A kind of product ("chips") means every place of that kind; a brand or product means its places.
     const category = isCategoryQuery(query);
     const match = findItem(query, catalog);
@@ -145,7 +158,7 @@ export function findInPhotos(scene: WayfindingScene, query: string): Promise<Vis
     if (found.length) return { status: "OK", items: found, detections: found.length, rejected: [] };
     if (!aiConfigured()) return { status: "UNAVAILABLE", reason: "No AI provider is configured to search the photos.", detections: 0 };
 
-    const detections = await detectInPhotos(scene, what);
+    const detections = await detectInPhotos(scene, what, signal);
     if (!detections.length) return { status: "NOT_SEEN", reason: `No ${what} was spotted in this scan's photos.`, detections: 0 };
 
     if (!scene.surfaces?.length) {
@@ -160,7 +173,7 @@ export function findInPhotos(scene: WayfindingScene, query: string): Promise<Vis
     const checked = await Promise.all(places.map(async (place) => {
       // Verify with the closest view: the most pixels on the product.
       const view = [...place.members].sort((a, b) => a.rangeM - b.rangeM)[0];
-      return { place, verdict: await verify(view.detection, what) };
+      return { place, verdict: await verify(view.detection, what, signal) };
     }));
     const rejected = checked.filter((c) => c.verdict && !c.verdict.ok).map((c) => ({ actually: c.verdict!.actually }));
     const items = checked
@@ -174,8 +187,30 @@ export function findInPhotos(scene: WayfindingScene, query: string): Promise<Vis
     }
     return { status: "OK", items, detections: detections.length, rejected };
   })();
-  const entry = { at: Date.now(), ttl: TTL_MS, value };
+  const entry: SearchEntry = { at: Date.now(), ttl: TTL_MS, value: withAbort(value, signal), controller, users: 0, settled: false };
   cache.set(key, entry);
-  value.then((v) => { if (v.status !== "OK") entry.ttl = 2 * 60_000; }, () => cache.delete(key));
-  return value;
+  entry.value.then((v) => {
+    entry.settled = true;
+    entry.at = Date.now();
+    if (v.status !== "OK") entry.ttl = 2 * 60_000;
+    if (v.status === "UNAVAILABLE" && cache.get(key) === entry) cache.delete(key);
+  }, () => {
+    entry.settled = true;
+    if (cache.get(key) === entry) cache.delete(key);
+  });
+  return consume(entry);
+
+  // Share an explicit search, but stop its downloads/model calls once nobody is waiting.
+  // A cancelled caller must not cancel another caller's search or poison the cached answer.
+  async function consume(entry: SearchEntry): Promise<VisionFind> {
+    entry.users++;
+    try { return await (options.signal ? withAbort(entry.value, options.signal) : entry.value); }
+    finally {
+      entry.users--;
+      if (!entry.users && !entry.settled) {
+        entry.controller.abort();
+        if (cache.get(key) === entry) cache.delete(key);
+      }
+    }
+  }
 }

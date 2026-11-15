@@ -14,10 +14,12 @@ export type Piece = { text: string } | { image: string };
 export async function structuredVision<S extends z.ZodObject>(
   schema: S,
   input: Piece[],
-  opts: { maxTokens: number; effort: "low" | "medium" | "high" },
+  opts: { maxTokens: number; effort: "low" | "medium" | "high"; signal?: AbortSignal },
 ): Promise<z.infer<S> | null> {
   const provider = aiProvider();
-  const pieces = await Promise.all(input.map(async (p) => ("image" in p ? { image: await resolveImage(p.image) } : p)));
+  opts.signal?.throwIfAborted();
+  const pieces = await Promise.all(input.map(async (p) => ("image" in p ? { image: await resolveImage(p.image, opts.signal) } : p)));
+  opts.signal?.throwIfAborted();
 
   if (provider === "anthropic") {
     const content = pieces.map((p) =>
@@ -29,7 +31,7 @@ export async function structuredVision<S extends z.ZodObject>(
       ...FALLBACK_PARAMS,
       output_config: { effort: opts.effort, format: betaZodOutputFormat(schema) },
       messages: [{ role: "user", content }],
-    });
+    }, opts.signal ? { signal: opts.signal, maxRetries: 0 } : undefined);
     if (res.stop_reason === "refusal" || !res.parsed_output) return null;
     return res.parsed_output as z.infer<S>;
   }
@@ -40,11 +42,13 @@ export async function structuredVision<S extends z.ZodObject>(
     let res: Awaited<ReturnType<ReturnType<typeof getGemini>["models"]["generateContent"]>> | null = null;
     const models = geminiModels();
     for (const [i, model] of models.entries()) {
+      opts.signal?.throwIfAborted();
       try {
         res = await getGemini().models.generateContent({
           model,
           contents: [{ role: "user", parts }],
           config: {
+            abortSignal: opts.signal,
             maxOutputTokens: opts.maxTokens,
             responseMimeType: "application/json",
             responseJsonSchema: toGeminiSchema(z.toJSONSchema(schema) as Record<string, unknown>),

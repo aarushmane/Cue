@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RoutePlan, SceneItem, Vec3 } from "@/lib/wayfinding/types";
-import type { VoiceEvent, VoiceResult } from "@/lib/voice/types";
+import { photoSearchQuery } from "@/lib/wayfinding/photoRequest";
+import { WAYFINDING_TIMEOUT_MESSAGE } from "@/lib/wayfinding/async";
 
 export type WayfindingStart = { sweep_id?: string; position?: Vec3 };
 export type WayfindingContext = { start: WayfindingStart; waypoints?: { id: string; position: Vec3; floor_id: string | null; neighbors: string[] }[] };
@@ -15,41 +16,11 @@ export type WayfindingState =
   | { status: "error"; query: string; message: string };
 
 async function post(path: string, body: unknown, signal: AbortSignal) {
-  const response = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal });
+  const response = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]) });
   return { response, data: await response.json().catch(() => ({})) as Record<string, unknown> };
 }
 
-type StreamEvent = VoiceEvent | { type: "result"; data: VoiceResult } | { type: "error"; error: string };
-
-/** Read the voice route's NDJSON stream, calling `onEvent` per line. */
-async function stream(body: unknown, signal: AbortSignal, onEvent: (event: StreamEvent) => void) {
-  const response = await fetch("/api/wayfinding/voice", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal });
-  if (!response.ok || !response.body) {
-    const data = await response.json().catch(() => ({})) as Record<string, unknown>;
-    throw new Error(String(data.error ?? "Could not search the scene."));
-  }
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  const flush = (line: string) => {
-    if (!line.trim()) return;
-    try { onEvent(JSON.parse(line) as StreamEvent); } catch { /* skip malformed line */ }
-  };
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-    lines.forEach(flush);
-  }
-  flush(buffer + decoder.decode());
-}
-
-/**
- * Search the saved catalog and plan. A catalog miss on a typed query falls back to the AI search (photos + agent),
- * but its movement actions are ignored: a typed search never moves the visitor.
- */
+/** Search the saved catalogue. Photo search runs only when explicitly requested. */
 export function useWayfinding(modelId: string, context: () => WayfindingContext) {
   const [state, setState] = useState<WayfindingState>({ status: "idle" });
   const inflight = useRef<AbortController | null>(null);
@@ -72,7 +43,7 @@ export function useWayfinding(modelId: string, context: () => WayfindingContext)
   }, []);
 
   const run = useCallback(async (query: string, body: Record<string, unknown>) => {
-    inflight.current?.abort();
+    inflight.current?.abort(); rerouting.current?.abort(); queued.current = null;
     const abort = new AbortController();
     inflight.current = abort;
     setState({ status: "loading", query });
@@ -82,28 +53,6 @@ export function useWayfinding(modelId: string, context: () => WayfindingContext)
       const { response, data } = result;
       if (abort.signal.aborted) return;
       if (data.status === "AMBIGUOUS") return setState({ status: "choose", query, options: data.options as SceneItem[] });
-      if (response.status === 404 && data.status === "ITEM_NOT_FOUND" && typeof body.query === "string") {
-        let settled = false;
-        await stream(payload, abort.signal, (event) => {
-          if (abort.signal.aborted) return;
-          if (event.type === "progress") {
-            if (!settled) setState({ status: "loading", query, label: event.label });
-          } else if (event.type === "route") {
-            settled = true;
-            setState({ status: "ready", query, reply: null, item: event.item ?? ("item" in event.plan ? event.plan.item : null), plan: event.plan });
-          } else if (event.type === "result") {
-            settled = true;
-            const { reply, item, plan } = event.data;
-            setState({ status: "ready", query, reply: reply || null, item: item ?? null, plan: plan ?? null });
-          } else if (event.type === "error") {
-            settled = true;
-            setState({ status: "error", query, message: event.error || "Could not search the scene." });
-          }
-          // "action" events are ignored: typed search never moves the visitor.
-        });
-        if (!settled && !abort.signal.aborted) setState({ status: "error", query, message: "Could not search the scene." });
-        return;
-      }
       if (!response.ok && !data.plan) {
         return setState({ status: "error", query, message: String(data.reason ?? data.error ?? "Could not plan a route.") });
       }
@@ -114,7 +63,7 @@ export function useWayfinding(modelId: string, context: () => WayfindingContext)
         plan: (data.plan as RoutePlan) ?? null,
       });
     } catch (error) {
-      if (!abort.signal.aborted) setState({ status: "error", query, message: error instanceof Error ? error.message : "Could not plan a route." });
+      if (!abort.signal.aborted) setState({ status: "error", query, message: error instanceof Error && error.name === "TimeoutError" ? WAYFINDING_TIMEOUT_MESSAGE : error instanceof Error ? error.message : "Could not plan a route." });
     }
   }, [modelId, context]);
 
@@ -156,7 +105,11 @@ export function useWayfinding(modelId: string, context: () => WayfindingContext)
     cancel,
     adopt,
     reroute,
-    find: (query: string) => run(query, { query }),
+    find: (query: string) => {
+      const previous = latest.current;
+      const photoQuery = photoSearchQuery(query, "query" in previous ? previous.query : "");
+      return run(query, { query: photoQuery || query, search_photos: photoQuery !== null });
+    },
     choose: (item: SceneItem) => run(item.name, { item_id: item.id, items: [item] }),
     clear: () => { inflight.current?.abort(); rerouting.current?.abort(); queued.current = null; setState({ status: "idle" }); },
   };

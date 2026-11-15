@@ -5,6 +5,7 @@ import { findInPhotos } from "@/lib/wayfinding/vision";
 import { clientKey, createLimiter } from "@/lib/api/rateLimit";
 import type { VoiceEvent } from "@/lib/voice/types";
 import { sceneCatalog } from "@/lib/wayfinding/catalog";
+import { WAYFINDING_TIMEOUT_MESSAGE, WAYFINDING_TIMEOUT_MS, withAbort } from "@/lib/wayfinding/async";
 
 export const maxDuration = 120;
 const limiter = createLimiter(30, 60_000);
@@ -25,23 +26,24 @@ export async function POST(request: Request) {
   if (!parsed.success) return Response.json({ error: "Invalid voice request." }, { status: 400 });
   const body = parsed.data;
   const aborted = new AbortController();
-  const signal = AbortSignal.any([request.signal, aborted.signal]);
+  const disconnected = AbortSignal.any([request.signal, aborted.signal]);
+  const signal = AbortSignal.any([disconnected, AbortSignal.timeout(WAYFINDING_TIMEOUT_MS)]);
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
       const send = (event: VoiceEvent | { type: "result"; data: unknown } | { type: "error"; error: string }) => {
-        if (!signal.aborted) controller.enqueue(encoder.encode(JSON.stringify(event) + "\n"));
+        if (!disconnected.aborted) controller.enqueue(encoder.encode(JSON.stringify(event) + "\n"));
       };
       try {
         send({ type: "progress", stage: "loading", label: "Loading scene" });
-        const base = await sceneFor(body);
-        const catalog = await sceneCatalog(base).catch(() => []);
+        const base = await withAbort(sceneFor(body), signal);
+        const catalog = await withAbort(sceneCatalog(base).catch(() => []), signal);
         const known = new Set(base.items.map((item) => item.id));
         const scene = { ...base, items: [...base.items, ...catalog.filter((item) => !known.has(item.id))] };
         signal.throwIfAborted();
-        const result = await runVoiceAgent(scene, {
+        const result = await withAbort(runVoiceAgent(scene, {
           query: body.query, start: toStart(body.start, scene), history: body.history, currentItemId: body.current_item_id, clarification: body.clarification,
-          signal, searchPhotos: (query) => findInPhotos(scene, query), headingDeg: body.heading_deg, speedMps: body.speed_mps, walkingSpeedMps: body.walking_speed_mps, onEvent: send,
+          signal, searchPhotos: (query) => findInPhotos(scene, query, { signal }), headingDeg: body.heading_deg, speedMps: body.speed_mps, walkingSpeedMps: body.walking_speed_mps, onEvent: (event) => { if (!signal.aborted) send(event); },
           getPosition: body.session_id ? async () => {
             const base = process.env.VOICE_BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000";
             try {
@@ -50,15 +52,19 @@ export async function POST(request: Request) {
               return state?.model_id === body.model_id ? state : null;
             } catch { signal.throwIfAborted(); return null; }
           } : undefined,
-        });
+        }), signal);
         send({ type: "result", data: result });
       } catch (error) {
-        if (!signal.aborted) {
+        if (!disconnected.aborted) {
+          if (signal.aborted || error instanceof Error && error.name === "TimeoutError") {
+            send({ type: "error", error: WAYFINDING_TIMEOUT_MESSAGE });
+            return;
+          }
           const response = errorResponse(error);
           const failure = await response.json();
           send({ type: "error", error: failure.error || "Could not plan the route. Try again." });
         }
-      } finally { if (!signal.aborted) controller.close(); }
+      } finally { if (!disconnected.aborted) controller.close(); }
     },
     cancel() { aborted.abort(); },
   });
