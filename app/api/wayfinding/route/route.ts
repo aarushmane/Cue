@@ -46,7 +46,7 @@ export async function POST(request: Request) {
             const nearest = planToNearest(scene, toStart(body.start, scene), categories, toOptions(body.options))!;
             return Response.json({ status: nearest.plan.status, ...nearest });
           }
-          if (!body.search_photos) return Response.json({ status: "ITEM_NOT_FOUND", reason: `I can't verify ${normalize(body.query!)} in the saved catalog. You can ask voice to search the photos.` }, { status: 404 });
+          if (!body.search_photos) return Response.json({ status: "ITEM_NOT_FOUND", reason: `I can't verify ${normalize(body.query!)} in the saved catalog.` }, { status: 404 });
           const found = await findInPhotos(scene, body.query!);
           if (found.status !== "OK") return Response.json({ status: "ITEM_NOT_FOUND", reason: found.reason }, { status: 404 });
           const nearest = planToNearest(scene, toStart(body.start, scene), found.items, toOptions(body.options))!;

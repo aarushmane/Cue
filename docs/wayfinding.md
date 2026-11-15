@@ -104,8 +104,9 @@ through them), `polyline`, `standPoint`, `facingDeg`, `legs[].text`, `arrows[]` 
   photo that sees it most squarely and closest wins (weight |n·d|^1.5 / r², straight down ×0.02), occlusion from a
   distance cube map per photo, mip level matched to the pixel footprint; unseen surfaces keep the MatterPak texture,
   holes stay white. **T** switches to the plain MatterPak textures (`?tex=matterpak` to start so). Rendering is sRGB.
-- **Walking:** WASD (Shift faster), drag or arrow keys to look, scroll to zoom, **1–9** or a floor ring to jump to a
-  photo spot. Collisions use the walkable grid from the scan mesh (`GET /api/sim/walk`, `lib/sim/walk.ts`): you stop
+- **Walking:** WASD (Shift faster), drag, arrow keys or **Q/E** to look/turn, **Space/C** to raise/lower the view, scroll to zoom, **1–9** or a floor ring to jump to a
+  photo spot. On touch (or mouse), double-tap steps 0.75 m forward and double-tap-hold walks forward until release,
+  sliding sideways to steer; the canvas sets `touch-action: none` so the browser does not zoom. Collisions use the walkable grid from the scan mesh (`GET /api/sim/walk`, `lib/sim/walk.ts`): you stop
   22 cm from shelves and slide along them, and can always step out of a tight spot.
 - **Route:** drawn in the scene as geometry on the floor (band, pulsing chevrons, stand ring), so shelves hide it; the
   item pin shows through. Off-screen, an edge arrow points the way. The band is redrawn from your feet every 5 cm you

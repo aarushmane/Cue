@@ -3,7 +3,8 @@ import type { VoiceClarification } from "./clarification";
 
 export type VoiceAction = { type: "move" | "stop" } | { type: "turn"; degrees: number }
   | { type: "face"; target: "route" | "destination" } | { type: "speed"; metersPerSecond: number };
-export type ViewPose = { position: Vec3; headingDeg: number; speedMps: number; walkingSpeedMps?: number; moving: boolean };
+export type ViewPose = { position: Vec3; headingDeg: number; speedMps: number; walkingSpeedMps?: number; moving: boolean; /** Camera tilt, up positive, when known. */ pitchDeg?: number;
+  /** Camera centre and lens, when known, so "is the visitor looking at it" can be judged on the real view. */ eye?: Vec3; vfovDeg?: number; aspect?: number };
 export const wrapHeading = (degrees: number) => ((degrees + 180) % 360 + 360) % 360 - 180;
 export type VoiceMessage = { role: "user" | "assistant"; content: string };
 export type VoiceResult = { reply: string; actions: VoiceAction[]; item: SceneItem | null; plan: RoutePlan | null; resetDestination?: boolean; clarification?: VoiceClarification };

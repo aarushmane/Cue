@@ -10,6 +10,7 @@ import { z } from "zod";
 import { graph, matterportConfigured } from "../matterport/client";
 import { parseObj, type Surfaces } from "./mesh";
 import { withAislePoints, type WalkGrid } from "./walkable";
+import { localBake } from "../sim/matterpak";
 import type { Obstacle, SceneItem, Waypoint, WayfindingScene } from "./types";
 
 const Vec3 = z.object({ x: z.number(), y: z.number(), z: z.number() });
@@ -124,6 +125,25 @@ async function scanMesh(modelId: string): Promise<Surfaces | undefined> {
   return value;
 }
 
+// The mesh the 3D walk draws (jb_store's cleaned, photo-baked mesh) when this machine has one. Collisions are built
+// from it, so the visitor is blocked exactly by what they see: the Model API's coarse 50k mesh has surfaces the drawn
+// mesh doesn't (invisible walls in aisles) and misses some it does. Cached per file version.
+const drawnMeshes = new Map<string, { version: string; value: Promise<Surfaces | undefined> }>();
+
+async function drawnMesh(modelId: string): Promise<Surfaces | undefined> {
+  const bake = await localBake(modelId);
+  if (!bake) return undefined;
+  const hit = drawnMeshes.get(modelId);
+  if (hit?.version === bake.version) return hit.value;
+  const value = readFile(bake.obj, "utf8").then(parseObj).catch((error: unknown) => {
+    console.warn("wayfinding: drawn mesh unreadable, walking uses the scan mesh", error);
+    drawnMeshes.delete(modelId);
+    return undefined;
+  });
+  drawnMeshes.set(modelId, { version: bake.version, value });
+  return value;
+}
+
 // Signed skybox URLs expire after about five minutes; reuse a lookup for two.
 const skyboxes = new Map<string, { at: number; value: Promise<Map<string, string>> }>();
 
@@ -163,15 +183,17 @@ const graphs = new WeakMap<Surfaces, Map<string, { waypoints: Waypoint[]; walk: 
 /** The full scene for planning: Matterport geometry + stored inputs + per-request inputs (request wins on id). */
 export async function loadScene(modelId: string, extra: SceneInputs = { items: [], obstacles: [] }): Promise<WayfindingScene> {
   if (!matterportConfigured()) throw new Error("Configure MATTERPORT_API_KEY and MATTERPORT_API_TOKEN.");
-  const [{ waypoints, walls }, stored, surfaces] = await Promise.all([matterportScene(modelId), storedInputs(modelId), scanMesh(modelId)]);
+  const [{ waypoints, walls }, stored, surfaces, drawn] = await Promise.all([matterportScene(modelId), storedInputs(modelId), scanMesh(modelId), drawnMesh(modelId)]);
   const items = new Map<string, SceneItem>();
   for (const item of [...stored.items, ...extra.items]) items.set(item.id, item as SceneItem);
   let graph: { waypoints: Waypoint[]; walk?: WalkGrid } = { waypoints };
-  if (surfaces) {
+  // Walking and aisle points follow the drawn mesh; ray casts (sight lines, photo detections) keep the light scan mesh.
+  const walkable = drawn ?? surfaces;
+  if (walkable) {
     const key = waypoints.map((w) => w.id).join(",");
-    const perMesh = graphs.get(surfaces) ?? new Map();
-    graphs.set(surfaces, perMesh);
-    if (!perMesh.has(key)) perMesh.set(key, withAislePoints(waypoints, surfaces));
+    const perMesh = graphs.get(walkable) ?? new Map();
+    graphs.set(walkable, perMesh);
+    if (!perMesh.has(key)) perMesh.set(key, withAislePoints(waypoints, walkable));
     graph = perMesh.get(key)!;
   }
   return {

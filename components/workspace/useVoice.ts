@@ -6,7 +6,7 @@ import { useMicrophone, type MicrophoneCapture } from "./useMicrophone";
 import { isStopCommand, VoiceTurn, type VoiceEvent, type VoiceMessage, type VoiceResult } from "@/lib/voice/types";
 import { playSpeech } from "@/lib/voice/playback";
 import { wakeCommand, type VoicePreferences } from "@/lib/voice/preferences";
-import type { GuidanceCue } from "@/lib/voice/guidance";
+import type { GuidanceSnapshot } from "@/lib/voice/guidance";
 import { voiceSocket } from "@/lib/voice/socket";
 import { normalize } from "@/lib/search/matchProducts";
 import type { VoiceClarification } from "@/lib/voice/clarification";
@@ -16,8 +16,12 @@ export type VoiceBridge = {
   apply: (result: VoiceResult) => void;
   stop: () => void;
   moving: () => boolean;
-  guidance: () => GuidanceCue | null;
+  guidance: () => GuidanceSnapshot | null;
+  /** The visitor has reached the item: stop movement and end the route. */
+  arrive: () => void;
 };
+/** The visitor must stay still, close by and looking at the item this long before navigation ends. */
+const ARRIVE_HOLD_MS = 700;
 /**
  * One tap of the microphone is one session: the microphone transcribes a single request (closing once the visitor
  * stops speaking), then the session stays alive only for the reply, any clarifying question, and spoken directions.
@@ -27,6 +31,8 @@ type Session = {
   timeout?: ReturnType<typeof setTimeout>; idle?: ReturnType<typeof setTimeout>; connected: boolean;
 };
 export type VoicePhase = "off" | "connecting" | "listening" | "thinking" | "speaking" | "idle";
+export type VoiceLogEntry = { id: number; role: "you" | "cue"; text: string };
+const LOG_LIMIT = 50;
 
 /** Silence before the first word, and after the last, that ends listening. */
 const NO_SPEECH_MS = 8000;
@@ -57,13 +63,13 @@ export function useVoice(bridge: VoiceBridge, preferences: VoicePreferences) {
   const clarification = useRef<VoiceClarification | null>(null);
   const utterance = useRef({ text: "", timer: undefined as ReturnType<typeof setTimeout> | undefined });
   const lastSpeech = useRef({ text: "", at: 0, playing: false });
-  const wasMoving = useRef(false);
-  const guidanceSpoken = useRef({ key: "", at: 0 });
   const session = useRef<Session | null>(null);
   const turn = useRef(new VoiceTurn());
   const busy = useRef(false);
   const history = useRef<VoiceMessage[]>([]);
   const listenRef = useRef<(current: Session) => Promise<void>>(async () => {});
+  /** A request already heard with the wake phrase ("Hey Cue, where's the milk"), sent once transcription connects. */
+  const spoken = useRef<string | null>(null);
   const [phase, setPhase] = useState<VoicePhase>("off");
   const [error, setError] = useState<string | null>(null);
   const [transcript, setTranscript] = useState("");
@@ -72,6 +78,15 @@ export function useVoice(bridge: VoiceBridge, preferences: VoicePreferences) {
   const [interrupted, setInterrupted] = useState(false);
   const [progress, setProgress] = useState<Extract<VoiceEvent, { type: "progress" }> | null>(null);
   const [navigation, setNavigation] = useState<"idle" | "guiding" | "arrived">("idle");
+  const [log, setLog] = useState<VoiceLogEntry[]>([]);
+  const logId = useRef(0);
+  const record = useCallback((role: VoiceLogEntry["role"], text: string) => {
+    const clean = text.trim();
+    if (clean) setLog((previous) => [...previous, { id: ++logId.current, role, text: clean }].slice(-LOG_LIMIT));
+  }, []);
+  // Spoken answers to typed searches play on their own audio context, with no microphone involved.
+  const announcer = useRef<{ context: AudioContext | null; abort: AbortController | null }>({ context: null, abort: null });
+  const silenceAnnouncement = useCallback(() => { announcer.current.abort?.abort(); announcer.current.abort = null; }, []);
 
   const resetUtterance = useCallback(() => {
     clearTimeout(utterance.current.timer);
@@ -90,10 +105,10 @@ export function useVoice(bridge: VoiceBridge, preferences: VoicePreferences) {
   }, []);
 
   const cancelWork = useCallback(() => {
+    silenceAnnouncement();
     resetUtterance();
     turn.current.cancel();
     busy.current = false;
-    wasMoving.current = false;
     latest.current.stop();
     setOutput(null);
     setInterrupted(true);
@@ -101,9 +116,10 @@ export function useVoice(bridge: VoiceBridge, preferences: VoicePreferences) {
     setNavigation("idle");
     const current = session.current;
     setPhase(!current ? "off" : current.connection ? current.connected ? "listening" : "connecting" : "idle");
-  }, [resetUtterance]);
+  }, [resetUtterance, silenceAnnouncement]);
 
   const dispose = useCallback(() => {
+    silenceAnnouncement();
     turn.current.cancel();
     busy.current = false;
     latest.current.stop();
@@ -113,15 +129,27 @@ export function useVoice(bridge: VoiceBridge, preferences: VoicePreferences) {
     resetUtterance();
     history.current = [];
     lastSpeech.current = { text: "", at: 0, playing: false };
-    wasMoving.current = false;
     old?.abort.abort();
     if (old) stopListening(old);
-  }, [resetUtterance, stopListening]);
+  }, [resetUtterance, stopListening, silenceAnnouncement]);
 
   /** End the session. The last request and reply stay on screen. */
   const stop = useCallback(() => {
     dispose(); stopMicrophone(); setPhase("off"); setOutput(null); setInterrupted(false); setProgress(null); setNavigation("idle");
   }, [dispose, stopMicrophone]);
+
+  /** End the microphone session once its request is handled, leaving movement and spoken directions running. */
+  const release = useCallback(() => {
+    const old = session.current;
+    if (!old) return;
+    session.current = null;
+    old.abort.abort();
+    stopListening(old);
+    stopMicrophone();
+    clarification.current = null;
+    resetUtterance();
+    setPhase("off");
+  }, [stopListening, stopMicrophone, resetUtterance]);
 
   /** Stop speech and movement. With nothing left to do, the session then ends on its own. */
   const interrupt = useCallback(() => {
@@ -132,7 +160,6 @@ export function useVoice(bridge: VoiceBridge, preferences: VoicePreferences) {
 
   const say = useCallback(async (text: string, signal: AbortSignal, current: Session) => {
     if (!current.capture || !options.current.spokenResponses) return;
-    guidanceSpoken.current.at = Date.now();
     setInterrupted(false);
     setPhase("speaking");
     const spoken = { text, at: Date.now(), playing: true };
@@ -165,6 +192,7 @@ export function useVoice(bridge: VoiceBridge, preferences: VoicePreferences) {
     cancelWork();
     setInterrupted(false);
     setTranscript(text);
+    record("you", text);
     setError(null);
     const signal = turn.current.begin();
     busy.current = true;
@@ -172,6 +200,7 @@ export function useVoice(bridge: VoiceBridge, preferences: VoicePreferences) {
     try {
       if (isStopCommand(text)) {
         setReply("Stopped.");
+        record("cue", "Stopped.");
         await say("Stopped.", signal, current);
         if (!signal.aborted) setInterrupted(true);
         return;
@@ -194,24 +223,24 @@ export function useVoice(bridge: VoiceBridge, preferences: VoicePreferences) {
       latest.current.apply({ ...result, actions: result.actions.filter((action) => action.type !== "move") });
       setProgress(null);
       setReply(result.reply);
+      record("cue", result.reply);
       history.current = [...history.current, { role: "user", content: text.slice(0, 300) }, { role: "assistant", content: result.reply }].slice(-8) as VoiceMessage[];
+      // Start walking while the reply is spoken rather than after it; spoken directions wait for the reply to end.
+      if (movement.length) {
+        if (result.plan?.status === "ALREADY_THERE") {
+          latest.current.apply({ ...result, actions: [{ type: "face", target: "destination" }] });
+          setNavigation("arrived");
+        } else {
+          latest.current.apply({ ...result, actions: movement });
+          setNavigation("guiding");
+        }
+      }
       await say(result.reply, signal, current);
       signal.throwIfAborted();
       if (result.clarification) {
         // A question gets one more listening turn, without another tap.
         clarification.current = result.clarification;
         reopen = true;
-      }
-      if (movement.length) {
-        guidanceSpoken.current.key = "";
-        if (result.plan?.status === "ALREADY_THERE") {
-          latest.current.apply({ ...result, actions: [{ type: "face", target: "destination" }] });
-          setNavigation("arrived");
-        } else {
-          latest.current.apply({ ...result, actions: movement });
-          wasMoving.current = true;
-          setNavigation("guiding");
-        }
       }
     } catch (error) {
       if (!signal.aborted && session.current === current) {
@@ -224,7 +253,7 @@ export function useVoice(bridge: VoiceBridge, preferences: VoicePreferences) {
         if (reopen) void listenRef.current(current);
       }
     }
-  }, [cancelWork, resetUtterance, say, stopListening]);
+  }, [cancelWork, resetUtterance, say, stopListening, record]);
 
   /** Open one transcription turn on the session's microphone. */
   const listen = useCallback(async (current: Session) => {
@@ -273,6 +302,9 @@ export function useVoice(bridge: VoiceBridge, preferences: VoicePreferences) {
         setPhase("listening");
         setInterrupted(false);
         armIdle(NO_SPEECH_MS);
+        const heard = spoken.current;
+        spoken.current = null;
+        if (heard && normalize(heard)) void submit(heard);
       });
       connection.on(RealtimeEvents.PARTIAL_TRANSCRIPT, ({ text: raw }) => {
         if (!live() || !raw.trim() || echo(raw)) return;
@@ -304,11 +336,12 @@ export function useVoice(bridge: VoiceBridge, preferences: VoicePreferences) {
   }, [echo, stop, stopListening, submit]);
   useEffect(() => { listenRef.current = listen; }, [listen]);
 
-  const start = useCallback(async () => {
+  /** Open a microphone session. `heard`: a request the wake listener already caught, sent without asking again. */
+  const start = useCallback(async (heard?: string) => {
     stop();
+    spoken.current = heard?.trim() || null;
     setError(null);
     setTranscript("");
-    setReply("");
     setPhase("connecting");
     const current: Session = { abort: new AbortController(), connected: false };
     session.current = current;
@@ -326,39 +359,107 @@ export function useVoice(bridge: VoiceBridge, preferences: VoicePreferences) {
     }
   }, [stop, dispose, startMicrophone, listen]);
 
-  // Spoken directions while walking, and ending the session once nothing is left to do.
+  /** Speak an answer to a typed search. Never starts movement and never opens the microphone. */
+  const announce = useCallback(async (text: string, query?: string) => {
+    if (query) record("you", query);
+    record("cue", text);
+    setReply(text);
+    setError(null);
+    if (session.current) cancelWork();
+    silenceAnnouncement();
+    if (!options.current.spokenResponses || !text.trim()) return;
+    const abort = new AbortController();
+    announcer.current.abort = abort;
+    const context = announcer.current.context && announcer.current.context.state !== "closed" ? announcer.current.context : new AudioContext();
+    announcer.current.context = context;
+    setPhase((phase) => phase === "off" ? "speaking" : phase);
+    try { await playSpeech(text, context, abort.signal, (analyser) => { if (!abort.signal.aborted) setOutput(analyser); }, options.current); }
+    catch (error) { if (!abort.signal.aborted) setError(error instanceof Error ? error.message : "Could not play voice."); }
+    finally {
+      if (announcer.current.abort === abort) {
+        announcer.current.abort = null;
+        setOutput(null);
+        setPhase((phase) => !session.current && phase === "speaking" ? "off" : phase);
+      }
+    }
+  }, [record, cancelWork, silenceAnnouncement]);
+  useEffect(() => () => { void announcer.current.context?.close().catch(() => {}); }, []);
+
+  /**
+   * Spoken directions, for any route (voice or typed), on their own audio context so no microphone is needed:
+   * a full sentence when the visitor stops, a few words every 4 s while walking, and a framing hint when they are
+   * near the item but it isn't roughly centred in view. Never talks over listening, thinking or a reply.
+   */
+  const guide = useRef({ wasMoving: false, stoppedAt: 0, pendingStop: false, lastEnd: 0, framing: "", offSince: 0, speaking: false, arriveSince: 0 });
+  const speakCue = useCallback(async (text: string, log: boolean) => {
+    const g = guide.current;
+    silenceAnnouncement();
+    const abort = new AbortController();
+    announcer.current.abort = abort;
+    g.speaking = true;
+    if (log) record("cue", text);
+    const context = announcer.current.context && announcer.current.context.state !== "closed" ? announcer.current.context : new AudioContext();
+    announcer.current.context = context;
+    try { await playSpeech(text, context, abort.signal, (analyser) => { if (!abort.signal.aborted) setOutput(analyser); }, options.current); }
+    catch (error) { if (!abort.signal.aborted) setError(error instanceof Error ? error.message : "Could not speak directions."); }
+    finally {
+      if (announcer.current.abort === abort) { announcer.current.abort = null; setOutput(null); }
+      g.speaking = false;
+      g.lastEnd = Date.now();
+    }
+  }, [record, silenceAnnouncement]);
+
   useEffect(() => {
-    const timer = setInterval(async () => {
+    const timer = setInterval(() => {
+      const g = guide.current;
       const current = session.current;
-      if (!current?.connected || current.connection) return;
-      if (busy.current || clarification.current || utterance.current.text) return;
+      // The microphone session ends as soon as its request is handled; walking and directions carry on without it.
+      if (current?.connected && !current.connection && !busy.current && !clarification.current && !utterance.current.text) release();
       const moving = latest.current.moving();
-      if (!options.current.guidance || !options.current.spokenResponses) {
-        wasMoving.current = moving;
-        if (!moving) stop();
+      const now = Date.now();
+      if (g.wasMoving && !moving) { g.pendingStop = true; g.stoppedAt = now; }
+      g.wasMoving = moving;
+      if (moving) g.pendingStop = false;
+      const snap = latest.current.guidance();
+      if (!snap) { g.pendingStop = false; g.offSince = 0; g.framing = ""; g.arriveSince = 0; return; }
+      if (moving) setNavigation((value) => value === "guiding" ? value : "guiding");
+      const speak = options.current.guidance && options.current.spokenResponses;
+      const quiet = !session.current && !announcer.current.abort && !busy.current && !g.speaking;
+      // Reached the item (close by, still and looking at it, at any eye height): end navigation, whatever the
+      // speech settings, once that has held for a moment.
+      if (snap.cue.arrived && !moving) {
+        if (!g.arriveSince) g.arriveSince = now;
+        if (now - g.arriveSince < ARRIVE_HOLD_MS) return;
+        g.arriveSince = 0; g.pendingStop = false; g.offSince = 0; g.framing = "";
+        latest.current.arrive();
+        setNavigation("arrived");
+        if (speak && quiet) void speakCue(snap.cue.text, true);
+        else record("cue", snap.cue.text);
         return;
       }
-      const justStopped = wasMoving.current && !moving;
-      wasMoving.current = moving;
-      const cue = latest.current.guidance();
-      if (cue?.arrived && moving) return; // Wait for the final facing motion before announcing arrival.
-      if (cue?.arrived && !moving && justStopped && cue.key !== guidanceSpoken.current.key) {
-        wasMoving.current = false;
-        setNavigation("arrived");
-      } else if (!moving && !justStopped) { stop(); return; }
-      if (!cue || (!moving && !cue.arrived) || cue.key === guidanceSpoken.current.key) return;
-      if (!cue.arrived && Date.now() - guidanceSpoken.current.at < 4000) return;
-      const signal = turn.current.begin();
-      guidanceSpoken.current = { key: cue.key, at: Date.now() };
-      busy.current = true;
-      if (!cue.arrived) setNavigation("guiding");
-      setReply(cue.text);
-      try { await say(cue.text, signal, current); }
-      catch (error) { if (!signal.aborted && session.current === current) setError(error instanceof Error ? error.message : "Could not speak directions."); }
-      finally { if (!signal.aborted && session.current === current) { busy.current = false; setOutput(null); setPhase("idle"); } }
-    }, 750);
+      g.arriveSince = 0;
+      if (!speak || !quiet) return;
+      // Stopped (and still for a moment, so pauses between key presses don't count).
+      if (g.pendingStop && now - g.stoppedAt >= 400) {
+        g.pendingStop = false;
+        const text = snap.framing ?? snap.cue.text;
+        g.framing = snap.framing ?? "";
+        void speakCue(text, true);
+        return;
+      }
+      if (moving) {
+        g.offSince = 0;
+        if (snap.brief && now - g.lastEnd >= 4000) void speakCue(snap.brief, false);
+        return;
+      }
+      // Standing near the item, facing away from it: say where it is (again only if it changed, or after 8 s).
+      if (!snap.framing) { g.offSince = 0; g.framing = ""; return; }
+      if (!g.offSince) g.offSince = now;
+      const repeat = snap.framing !== g.framing ? 4000 : 8000;
+      if (now - g.offSince >= 600 && now - g.lastEnd >= repeat) { g.framing = snap.framing; void speakCue(snap.framing, true); }
+    }, 250);
     return () => clearInterval(timer);
-  }, [say, stop]);
+  }, [release, speakCue, record]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -394,5 +495,5 @@ export function useVoice(bridge: VoiceBridge, preferences: VoicePreferences) {
   // Hardware disconnection also closes the websocket and cancels agent/audio work.
   useEffect(() => { if (microphone.state.status === "off" && session.current?.capture) stop(); }, [microphone.state.status, stop]);
 
-  return { phase, progress, navigation, interrupted, error: error ?? microphone.state.error, analyser: output ?? microphone.state.analyser, transcript, reply, start, stop, interrupt };
+  return { phase, progress, navigation, interrupted, error: error ?? microphone.state.error, analyser: output ?? microphone.state.analyser, transcript, reply, log, start, stop, interrupt, announce };
 }

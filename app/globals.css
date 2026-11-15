@@ -109,14 +109,14 @@
 }
 
 @layer components {
-  .workspace-body { display: grid; grid-template-columns: 320px minmax(0, 1fr); height: 100svh; }
-  .explore-pane { min-width: 0; position: relative; grid-column: 2; grid-row: 1; }
+  .workspace-body { position: relative; height: 100svh; }
+  .explore-pane { min-width: 0; position: relative; height: 100%; }
   .scene { position: relative; width: 100%; height: 100%; overflow: hidden; isolation: isolate; background: var(--scene-background); }
   .scene:fullscreen { height: 100svh; }
   .scene-embed { display: block; position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
   .scene-embed:focus-visible { outline: 2px solid var(--ring); outline-offset: -3px; }
   .scene-status { position: absolute; inset: 0; display: grid; place-items: center; padding: 1.5rem; pointer-events: none; }
-  .panel-search-toolbar { display: flex; align-items: center; gap: 12px; padding: 16px; }
+  .panel-search-toolbar { display: flex; align-items: center; gap: 12px; padding: 12px 12px 4px; }
   .workspace-logo { flex-shrink: 0; width: 44px; height: 44px; overflow: hidden; border-radius: 8px; }
   .workspace-logo img { width: 100%; height: 100%; object-fit: cover; transform: scale(1.29); }
   .destination-search { position: relative; flex: 1; min-width: 0; }
@@ -125,10 +125,13 @@
   .destination-search input::-webkit-search-cancel-button { display: none; }
   .scene-toolbar { position: absolute; right: 20px; bottom: 20px; z-index: 4; }
   .scene-tools { display: flex; align-items: center; gap: 3px; border: 1px solid var(--border); border-radius: 8px; background: var(--popover); padding: 3px; }
-  .scene-route-container { position: absolute; top: 20px; left: 20px; z-index: 4; width: 360px; max-width: calc(100% - 40px); max-height: calc(100% - 100px); overflow-y: auto; }
+  .scene-route-container { position: absolute; top: 16px; right: 16px; z-index: 4; width: 360px; max-width: calc(100% - 40px); max-height: calc(100% - 100px); overflow-y: auto; }
   .route-panel { padding: 14px; background: var(--popover); color: var(--popover-foreground); border: 1px solid var(--border); border-radius: 8px; }
-  .voice-panel { min-width: 0; display: flex; flex-direction: column; grid-column: 1; grid-row: 1; border-right: 1px solid var(--border); background: var(--background); }
-  .voice-main { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 0 16px 16px; }
+  .voice-panel { position: absolute; top: 16px; left: 16px; z-index: 10; width: 320px; max-width: calc(100% - 32px); max-height: calc(100% - 32px); display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 8px; background: var(--background); overflow: hidden; }
+  .voice-log { width: 100%; max-height: calc(5 * 20px); overflow-y: auto; margin: 0; padding: 0 4px 0 0; list-style: none; font-size: 14px; line-height: 20px; overscroll-behavior: contain; }
+  .voice-log li { overflow-wrap: anywhere; }
+  .voice-log li + li { margin-top: 4px; }
+  .voice-main { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 0 12px 12px; }
   .voice-controls { display: flex; align-items: center; justify-content: center; gap: 8px; }
   .voice-settings { animation-duration: var(--duration-normal); }
   .voice-wave { grid-area: 1 / 1; width: 150px; }
@@ -155,13 +158,13 @@
 @keyframes panel-enter { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 
 @media (max-width: 767px) {
-  .workspace-body { height: auto; min-height: 100svh; grid-template-columns: minmax(0, 1fr); }
+  .workspace-body { height: auto; min-height: 100svh; display: flex; flex-direction: column; }
   .scene { height: 65svh; min-height: 400px; }
   .panel-search-toolbar { padding: 12px; }
   .scene-toolbar { right: 12px; bottom: 12px; }
-  .scene-route-container { left: 12px; top: 12px; max-width: calc(100% - 24px); }
-  .explore-pane { grid-column: 1; grid-row: 1; }
-  .voice-panel { grid-column: 1; grid-row: 2; border-right: 0; border-top: 1px solid var(--border); }
+  .scene-route-container { right: 12px; top: 12px; max-width: calc(100% - 24px); }
+  .explore-pane { height: auto; }
+  .voice-panel { position: static; width: auto; max-width: none; max-height: none; margin: 12px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -37,12 +37,24 @@
     ]
   },
   "baked": {
-    "obj": "baked_rebuilt/mesh.obj",
-    "mtl": "baked_rebuilt/mesh.mtl",
+    "obj": "baked_rebuilt/mesh_clean.obj",
+    "mtl": "baked_rebuilt/mesh_clean.mtl",
     "atlases": 7,
     "atlas_size": 4096,
     "finest_texel_mm": 2.492,
-    "mesh": "rebuilt"
+    "mesh": "rebuilt",
+    "raw_obj": "baked_rebuilt/mesh.obj",
+    "cleaned": {
+      "dropped": 32750,
+      "patched": 20560,
+      "objects": 43,
+      "ai_objects": 8,
+      "near_m": 0.05,
+      "backed": 0.3,
+      "max_edge_m": 0.2,
+      "patch_gap_m": 0.06
+    },
+    "raw_mtl": "baked_rebuilt/mesh.mtl"
   },
   "rebuilt": {
     "obj": "rebuilt/mesh.obj",

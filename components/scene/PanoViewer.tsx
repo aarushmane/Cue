@@ -94,7 +94,12 @@ export function PanoViewer({ modelId, sweepId, plan, faceKey, onSweeps, onMove, 
       turn: (degrees) => { view.current.tween++; view.current.yaw = wrap(view.current.yaw + degrees); redraw.current(); },
       moving: () => false,
       heading: () => view.current.yaw,
-      pose: () => view.current.sweep ? { position: view.current.sweep.position, headingDeg: view.current.yaw, speedMps: 0, moving: false } : null,
+      pose: () => {
+        const v = view.current, canvas = glCanvas.current;
+        if (!v.sweep) return null;
+        return { position: v.sweep.position, headingDeg: v.yaw, pitchDeg: v.pitch, eye: v.sweep.camera, vfovDeg: v.fov,
+          aspect: canvas?.clientHeight ? canvas.clientWidth / canvas.clientHeight : undefined, speedMps: 0, moving: false };
+      },
       face: (position) => {
         const v = view.current;
         if (!v.sweep) return;

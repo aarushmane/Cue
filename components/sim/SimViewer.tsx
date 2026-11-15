@@ -16,6 +16,9 @@ type Pano = { id: string; kind: "photo" | "aisle"; label: string | null; positio
 
 const MAX_PANOS = 7; // texture units per material: 1 MatterPak map + 2 per photo, under 16
 const WALK_MPS = 1.4, RUN_MPS = 3, GUIDE_MPS = 1.2, TURN_DPS = 90;
+/** Touch/mouse walking: a second tap within DOUBLE_TAP_MS and DOUBLE_TAP_PX steps STEP_M forward, or walks while held past HOLD_MS. */
+const DOUBLE_TAP_MS = 300, DOUBLE_TAP_PX = 40, HOLD_MS = 250, STEP_M = 0.75;
+const LIFT_MPS = 1, LIFT_MIN_M = -1, LIFT_MAX_M = 1.2;
 const MIN_FOV = 35, MAX_FOV = 95;
 
 /** CSS colour (any syntax the browser knows, e.g. oklch tokens) → THREE.Color, via a 1-pixel canvas. */
@@ -106,6 +109,52 @@ function distanceCube(renderer: THREE.WebGLRenderer, mesh: THREE.Mesh, origin: T
   cam.update(renderer, s);
   s.overrideMaterial.dispose();
   return rt;
+}
+
+/**
+ * Holes in the scan take the colours around them instead of a flat background. The scene renders into a mipmapped
+ * target with a transparent clear; for an empty pixel, coarser and coarser mip levels are composited front to back
+ * ("pull"), so the gap fills with a soft gradient of the nearest surfaces. Covered pixels pass through unchanged.
+ */
+function holeFill() {
+  const target = new THREE.WebGLRenderTarget(1, 1, {
+    samples: 4, type: THREE.HalfFloatType, generateMipmaps: true,
+    minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter,
+  });
+  const material = new THREE.ShaderMaterial({
+    uniforms: { tMap: { value: target.texture } },
+    vertexShader: "varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }",
+    fragmentShader: `
+      uniform sampler2D tMap;
+      varying vec2 vUv;
+      void main() {
+        vec4 acc = textureLod(tMap, vUv, 0.0); // premultiplied: the clear is transparent black
+        for (float level = 1.0; level <= 12.0; level += 1.0) {
+          if (acc.a >= 0.995) break;
+          vec4 m = textureLod(tMap, vUv, level);
+          acc.rgb += (1.0 - acc.a) * m.rgb;
+          acc.a += (1.0 - acc.a) * m.a;
+        }
+        gl_FragColor = vec4(acc.a > 0.0 ? acc.rgb / acc.a : vec3(1.0), 1.0);
+        #include <colorspace_fragment>
+      }`,
+    depthTest: false, depthWrite: false,
+  });
+  const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
+  quad.frustumCulled = false;
+  const scene = new THREE.Scene();
+  scene.add(quad);
+  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  return {
+    resize: (w: number, h: number) => target.setSize(Math.max(1, w), Math.max(1, h)),
+    render: (renderer: THREE.WebGLRenderer, view: THREE.Scene, eye: THREE.Camera) => {
+      renderer.setRenderTarget(target);
+      renderer.render(view, eye);
+      renderer.setRenderTarget(null);
+      renderer.render(scene, camera);
+    },
+    dispose: () => { target.dispose(); material.dispose(); quad.geometry.dispose(); },
+  };
 }
 
 /** One photo's six faces as a mipmapped texture array (layer = face, row 0 = top), resized to `res`. */
@@ -234,11 +283,14 @@ export function SimViewer({ modelId, plan, onPosition, onUnavailable, controlRef
     renderer.domElement.className = "absolute inset-0 size-full outline-none";
     renderer.domElement.tabIndex = 0;
     renderer.domElement.setAttribute("role", "application");
-    renderer.domElement.setAttribute("aria-label", "3D store. Use W A S D or Up and Down to walk, Left and Right to turn, and drag to look around.");
+    renderer.domElement.setAttribute("aria-label", "3D store. Use W A S D or Up and Down to walk, Left and Right or Q and E to turn, Space and C to raise or lower the view, and drag to look around. Double-tap to step forward, or double-tap and hold to walk, sliding sideways to steer.");
     root.prepend(renderer.domElement);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xffffff); // what shows through holes in the mesh (as in Mann's viewer)
+    scene.background = null; // holes are filled from the surrounding surfaces (holeFill)
+    renderer.setClearColor(0x000000, 0);
+    const fill = holeFill();
+    const draw = () => fill.render(renderer, scene, camera);
     const camera = new THREE.PerspectiveCamera(75, 1, 0.05, 200);
     camera.up.set(0, 0, 1); // Matterport frame: z up, so routes and items need no conversion
 
@@ -250,6 +302,8 @@ export function SimViewer({ modelId, plan, onPosition, onUnavailable, controlRef
       grid: null as SimGrid | null,
       floor: { x: 0, y: 0 },
       yaw: 0, pitch: -8, fov: 75,
+      /** Space/C raise and lower the eye above its walking height (m). */
+      lift: 0,
       speedMps: 0, guideMps: GUIDE_MPS,
       route: null as { group: THREE.Group; chevrons: THREE.MeshBasicMaterial[] } | null,
       plan: null as OkPlan | null,
@@ -264,8 +318,18 @@ export function SimViewer({ modelId, plan, onPosition, onUnavailable, controlRef
       mesh: null as THREE.Mesh<THREE.BufferGeometry, THREE.Material[]> | null,
       original: null as THREE.Mesh<THREE.BufferGeometry, THREE.Material[]> | null,
       source: "matterpak" as "baked" | "matterpak",
+      /** Double-tap-hold walks forward until release; a quick double-tap leaves one step (m) to walk. */
+      holdWalk: false, stepLeft: 0,
     };
     const keys = new Set<string>();
+    // A double-tap walk gesture in progress (the second pointer of a pair), with its hold timer.
+    let walkGesture: { pointerId: number; timer: number } | null = null;
+    const cancelWalk = () => {
+      if (walkGesture) window.clearTimeout(walkGesture.timer);
+      walkGesture = null;
+      state.holdWalk = false; state.stepLeft = 0;
+    };
+    const liftedEye = (g: SimGrid) => { const eye = eyeAt(g, state.floor); return { ...eye, z: eye.z + state.lift }; };
     let frame = 0;
     const clock = new THREE.Clock();
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -286,7 +350,7 @@ export function SimViewer({ modelId, plan, onPosition, onUnavailable, controlRef
       drawRoute();
     };
     const faceTarget = (t: Vec3, flat = false) => {
-      const eye = state.grid ? eyeAt(state.grid, state.floor) : camera.position;
+      const eye = state.grid ? liftedEye(state.grid) : camera.position;
       const d = { x: t.x - eye.x, y: t.y - eye.y, z: t.z - eye.z };
       const pitch = (Math.atan2(d.z, Math.hypot(d.x, d.y)) * 180) / Math.PI;
       state.turnTo = { yaw: (Math.atan2(d.y, d.x) * 180) / Math.PI, pitch: flat ? Math.max(-25, Math.min(-8, pitch)) : pitch };
@@ -297,19 +361,21 @@ export function SimViewer({ modelId, plan, onPosition, onUnavailable, controlRef
       if (p.status === "ALREADY_THERE" || p.polyline.length < 2) { state.guide = null; faceTarget(p.item.position); return; }
       // Walk to where to stand (the ring), not up to the shelf, then turn to the item.
       const path = p.polyline;
+      cancelWalk();
       state.guide = { path, atM: progressAlong(path, { ...state.floor, z: 0 }).atM, endYaw: null };
     };
     api.current = { setPlan };
-    const stop = () => { state.guide = null; state.turnTo = null; keys.clear(); };
+    const stop = () => { state.guide = null; state.turnTo = null; keys.clear(); cancelWalk(); };
     const guiding = () => Boolean(state.guide || state.turnTo);
-    const moving = () => guiding() || state.speedMps > 0.05 || ["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown"].some((key) => keys.has(key));
+    const moving = () => guiding() || state.speedMps > 0.05 || state.holdWalk || state.stepLeft > 0 ||["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown"].some((key) => keys.has(key));
     if (controlRef) controlRef.current = {
       stop,
       turn: (degrees) => { stop(); state.turnTo = { yaw: state.yaw + degrees, pitch: state.pitch }; },
       moving,
       guiding,
       heading: () => wrap(state.yaw),
-      pose: () => state.grid ? { position: { ...state.floor, z: state.grid.floorZ }, headingDeg: wrap(state.yaw), speedMps: state.speedMps, walkingSpeedMps: state.guideMps, moving: moving() } : null,
+      pose: () => state.grid ? { position: { ...state.floor, z: state.grid.floorZ }, headingDeg: wrap(state.yaw), pitchDeg: state.pitch,
+        eye: liftedEye(state.grid), vfovDeg: state.fov, aspect: camera.aspect, speedMps: state.speedMps, walkingSpeedMps: state.guideMps, moving: moving() } : null,
       face: (target) => { stop(); faceTarget(target); },
       speed: (mps) => { state.guideMps = Math.max(0.4, Math.min(1.8, mps)); },
       guide: (plan) => { setPlan(plan); guide(); },
@@ -414,13 +480,14 @@ export function SimViewer({ modelId, plan, onPosition, onUnavailable, controlRef
       const t = e.target as HTMLElement | null;
       return !!t && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName));
     };
-    const MOVE_KEYS = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "ShiftLeft", "ShiftRight"]);
+    // WASD walk, arrows or Q/E turn, Space/C raise/lower the view.
+    const MOVE_KEYS = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "KeyQ", "KeyE", "Space", "KeyC", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "ShiftLeft", "ShiftRight"]);
     window.addEventListener("keydown", (e) => {
       if (typing(e) || e.metaKey || e.ctrlKey || e.altKey) return;
       if (MOVE_KEYS.has(e.code)) {
         keys.add(e.code);
-        state.guide = null; state.turnTo = null; // the visitor takes over
-        if (e.code.startsWith("Arrow")) e.preventDefault();
+        state.guide = null; state.turnTo = null; cancelWalk(); // the visitor takes over
+        if (e.code.startsWith("Arrow") || e.code === "Space") e.preventDefault(); // no page scroll or button press
       }
       if (e.code === "KeyT" && state.materials && state.mesh) {
         state.photoOn = !state.photoOn;
@@ -459,23 +526,55 @@ export function SimViewer({ modelId, plan, onPosition, onUnavailable, controlRef
     };
 
     let drag: { x: number; y: number; moved: number } | null = null;
+    // The last single tap (released without dragging): a second press soon after and close by walks.
+    let lastTap: { t: number; x: number; y: number } | null = null;
     const canvas = renderer.domElement;
     canvas.style.cursor = "grab";
-    canvas.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, y: e.clientY, moved: 0 }; canvas.setPointerCapture(e.pointerId); canvas.focus(); state.turnTo = null; }, { signal: abort.signal });
+    canvas.style.touchAction = "none"; // no browser double-tap zoom or scroll: double-tap walks
+    canvas.addEventListener("pointerdown", (e) => {
+      drag = { x: e.clientX, y: e.clientY, moved: 0 };
+      canvas.setPointerCapture(e.pointerId); canvas.focus(); state.turnTo = null;
+      const now = performance.now();
+      if (lastTap && now - lastTap.t < DOUBLE_TAP_MS && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < DOUBLE_TAP_PX) {
+        // Second tap of a pair: a quick release steps forward, holding walks until release.
+        cancelWalk();
+        state.guide = null; // the visitor takes over
+        const g = { pointerId: e.pointerId, timer: 0 };
+        g.timer = window.setTimeout(() => { if (walkGesture === g) state.holdWalk = true; }, HOLD_MS);
+        walkGesture = g;
+        lastTap = null;
+      }
+    }, { signal: abort.signal });
     canvas.addEventListener("pointermove", (e) => {
       if (!drag) return;
       const k = state.fov / canvas.clientHeight;
+      if (walkGesture?.pointerId === e.pointerId) {
+        // Holding to walk: sideways movement steers, vertical movement is ignored.
+        if (state.holdWalk) state.yaw += (e.clientX - drag.x) * k;
+        drag.x = e.clientX; drag.y = e.clientY;
+        return;
+      }
       state.yaw += (e.clientX - drag.x) * k;
       state.pitch = Math.max(-85, Math.min(85, state.pitch + (e.clientY - drag.y) * k));
       drag.moved += Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y);
       drag.x = e.clientX; drag.y = e.clientY;
       canvas.style.cursor = "grabbing";
     }, { signal: abort.signal });
+    const endWalk = (e: PointerEvent) => {
+      if (walkGesture?.pointerId !== e.pointerId) return false;
+      const step = !state.holdWalk && e.type === "pointerup";
+      cancelWalk();
+      if (step) state.stepLeft = STEP_M;
+      return true;
+    };
+    canvas.addEventListener("pointercancel", (e) => { endWalk(e); drag = null; canvas.style.cursor = "grab"; }, { signal: abort.signal });
     canvas.addEventListener("pointerup", (e) => {
       const click = drag && drag.moved < 6;
       drag = null;
       canvas.style.cursor = "grab";
-      if (!click) return;
+      if (endWalk(e)) return;
+      if (!click) { lastTap = null; return; }
+      lastTap = { t: performance.now(), x: e.clientX, y: e.clientY };
       // Select a photo spot ring to go there.
       const r = canvas.getBoundingClientRect();
       const ray = new THREE.Raycaster();
@@ -492,6 +591,8 @@ export function SimViewer({ modelId, plan, onPosition, onUnavailable, controlRef
     const resize = () => {
       const w = root.clientWidth, h = root.clientHeight;
       renderer.setSize(w, h, false);
+      const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+      fill.resize(size.x, size.y);
       camera.aspect = w / Math.max(1, h);
       camera.updateProjectionMatrix();
       const dpr = Math.min(window.devicePixelRatio, 2);
@@ -508,11 +609,13 @@ export function SimViewer({ modelId, plan, onPosition, onUnavailable, controlRef
       frame = requestAnimationFrame(tick);
       const dt = Math.min(clock.getDelta(), 0.1);
       const g = state.grid;
-      if (!g) { renderer.render(scene, camera); return; }
+      if (!g) { draw(); return; }
 
       // Look keys and smooth turns.
-      if (keys.has("ArrowLeft")) state.yaw += TURN_DPS * dt;
-      if (keys.has("ArrowRight")) state.yaw -= TURN_DPS * dt;
+      if (keys.has("ArrowLeft") || keys.has("KeyQ")) state.yaw += TURN_DPS * dt;
+      if (keys.has("ArrowRight") || keys.has("KeyE")) state.yaw -= TURN_DPS * dt;
+      if (keys.has("Space")) state.lift = Math.min(LIFT_MAX_M, state.lift + LIFT_MPS * dt);
+      if (keys.has("KeyC")) state.lift = Math.max(LIFT_MIN_M, state.lift - LIFT_MPS * dt);
       if (state.turnTo) {
         const k = 1 - Math.exp(-dt * 6);
         state.yaw += wrap(state.turnTo.yaw - state.yaw) * k;
@@ -533,6 +636,12 @@ export function SimViewer({ modelId, plan, onPosition, onUnavailable, controlRef
       if (len > 0) {
         const speed = (keys.has("ShiftLeft") || keys.has("ShiftRight") ? RUN_MPS : WALK_MPS) * dt / len;
         state.floor = walk(g, state.floor, mx * speed, my * speed);
+      } else if (state.holdWalk || state.stepLeft > 0) {
+        // Double-tap: one step forward; double-tap-hold: keep walking forward.
+        const d = state.holdWalk ? WALK_MPS * dt : Math.min(WALK_MPS * dt, state.stepLeft);
+        const from = state.floor;
+        state.floor = walk(g, state.floor, fwd.x * d, fwd.y * d);
+        if (!state.holdWalk) state.stepLeft = Math.hypot(state.floor.x - from.x, state.floor.y - from.y) > 1e-4 ? state.stepLeft - d : 0; // blocked: drop the step
       } else if (state.guide) {
         const gd = state.guide;
         const total = progressAlong(gd.path, gd.path[gd.path.length - 1]).atM;
@@ -577,7 +686,7 @@ export function SimViewer({ modelId, plan, onPosition, onUnavailable, controlRef
       }
 
       // Camera.
-      const eye = eyeAt(g, state.floor);
+      const eye = liftedEye(g);
       const p = (state.pitch * Math.PI) / 180;
       camera.position.set(eye.x, eye.y, eye.z);
       camera.lookAt(eye.x + Math.cos(p) * fwd.x, eye.y + Math.cos(p) * fwd.y, eye.z + Math.sin(p));
@@ -589,7 +698,7 @@ export function SimViewer({ modelId, plan, onPosition, onUnavailable, controlRef
         const animate = Boolean(state.guide) && !reducedMotion.matches;
         state.route.chevrons.forEach((m, i) => { m.opacity = animate ? 0.78 + 0.18 * Math.max(0, Math.sin(t * 2 - i * 0.6)) : 0.95; });
       }
-      renderer.render(scene, camera);
+      draw();
 
       // Edge arrow toward the next stretch of route when it is off screen.
       const w = top.clientWidth, h = top.clientHeight, dpr = top.width / Math.max(1, w);
@@ -625,6 +734,7 @@ export function SimViewer({ modelId, plan, onPosition, onUnavailable, controlRef
       if (controlRef) controlRef.current = null;
       abort.abort();
       observer.disconnect();
+      fill.dispose();
       api.current = null;
       scene.traverse((o) => {
         const m = o as THREE.Mesh;

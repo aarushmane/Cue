@@ -27,7 +27,7 @@ const cacheDir = (modelId: string, source: SimSource) => path.join(tmpdir(), "st
 const jbData = (modelId: string) => path.join(process.cwd(), "jb_store", "data", modelId);
 
 /** Mann's photo-baked mesh for this model, if his pipeline has produced one on this machine. */
-async function localBake(modelId: string): Promise<{ obj: string; mtl: string | null; version: string } | null> {
+export async function localBake(modelId: string): Promise<{ obj: string; mtl: string | null; version: string } | null> {
   try {
     const meta = JSON.parse(await readFile(path.join(jbData(modelId), "meta.json"), "utf8")) as { baked?: { obj?: string; mtl?: string } };
     if (!meta.baked?.obj) return null;

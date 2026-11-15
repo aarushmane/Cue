@@ -52,6 +52,9 @@ py -3.13 -m pip install torch --index-url https://download.pytorch.org/whl/cpu
 py -3.13 -m pip install transformers
 py -3.13 rebuild_mesh.py                       # ~15 min on a laptop CPU; --no-depth skips the depth model
 py -3.13 bake_textures.py --mesh rebuilt       # bakes onto it -> data/<sid>/baked_rebuilt/, the viewer then uses it
+py -3.13 clean_mesh.py                         # keeps what the scanner saw, patches undrawn obstacles -> baked_rebuilt/mesh_clean.obj (seconds)
+py -3.13 complete_objects.py --crops-only     # optional: photo crop of each patched object -> baked_rebuilt/objects/<id>/view.jpg
+py -3.13 complete_objects.py --only obj003    # AI 3D model (fal.ai TRELLIS, FAL_KEY in .env.local) aligned to the scan; kept only if it fits
 ```
 
 `rebuild_mesh.py` meshes the scanner's point cloud (millions of points, much denser than the MatterPak mesh) with screened Poisson reconstruction. Where the scanner saw nothing, or saw only something far behind (glass coolers, shiny or dark surfaces), it runs Depth Anything V2 (metric indoor) on each pano cube face. It lines that depth up with the scan per face (scale + shift; the model is about 2–3× off on 90° faces), then adds points at the estimated depth. Any surface Poisson invents more than 3 cm from a real point is cut away again, so remaining holes stay holes. Tuning: `--poisson 10` (faster, coarser), `--faces` (triangle budget, default 800k), `--trim`.
@@ -89,6 +92,8 @@ The mesh is Z-up in metres. The viewer converts it to three.js Y-up, but the rea
 - `fetch_panos.py`: 4k pano skybox photos + pano positions and rotations → `data/<sid>/panos/`
 - `bake_textures.py`: bakes textures from the pano photos → `data/<sid>/baked/` (or `baked_rebuilt/` with `--mesh rebuilt`)
 - `rebuild_mesh.py`: point cloud + monocular depth → `data/<sid>/rebuilt/mesh.obj`
+- `clean_mesh.py`: keeps every piece of the baked mesh the scanner backs, drops unbacked blobs and stretched triangles, and patches in MatterPak surface that blocks walking but wasn't drawn; lists patched objects in `objects.json`; `--dry-run` to preview
+- `complete_objects.py`: replaces patched objects with fal.ai TRELLIS image-to-3D models from a pano crop, aligned by 8 headings + ICP and accepted only if chamfer < 8 cm and footprint IoU > 0.5 (`--panos` if the photos live elsewhere, `--crops-only`, `--only`). Needs `pip install trimesh httpx` and `FAL_KEY`; collisions still come from the scan
 - `viewer/panotex.js`: paints the mesh from the pano photos (skybox face layout is documented at its top)
 - `get_cloud.py`: `cloud.xyz` → `cloud.bin` (16-bit positions + RGB, 9 bytes a point) for the viewer
 - `viewer/`: three.js first-person viewer

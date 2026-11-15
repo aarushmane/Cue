@@ -8,9 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 import { Logo } from "@/components/workspace/Logo";
-import { VoicePanel } from "@/components/workspace/VoicePanel";
+import { VoicePanel, type Announce } from "@/components/workspace/VoicePanel";
 import { wrapHeading, type ViewControls, type VoiceResult, type ViewPose } from "@/lib/voice/types";
-import { guidanceFor } from "@/lib/voice/guidance";
+import { guidanceSnapshot } from "@/lib/voice/guidance";
 import { lookAhead } from "@/lib/wayfinding/screen";
 import { RouteMap } from "./RouteMap";
 import { PanoViewer, type PanoSweep } from "./PanoViewer";
@@ -59,6 +59,9 @@ export function SceneViewer({ modelId, name }: { modelId: string; name: string }
   const viewControl = useRef<ViewControls | null>(null);
   const motion = useRef<AbortController | null>(null);
   const interruptVoice = useRef<(() => void) | null>(null);
+  const announce = useRef<Announce | null>(null);
+  // A typed search (or a choice from its options) waiting to be read aloud once its answer arrives.
+  const spokenSearch = useRef<string | null>(null);
   // The route panel folds down to one line so it doesn't cover the tour.
   const [folded, setFolded] = useState(false);
   // Walkable simulation (no SDK key): where the visitor stands, and a counter that starts "walk me there".
@@ -89,6 +92,8 @@ export function SceneViewer({ modelId, name }: { modelId: string; name: string }
   const wayfinding = useWayfinding(modelId, context);
   const { reroute, cancel: cancelWayfinding } = wayfinding;
   const currentRoute = useRef(wayfinding.state);
+  /** The plan whose item was in view at the last check: it keeps a wider margin so the "looking at it" state doesn't flicker. */
+  const framedItem = useRef<unknown>(null);
   useEffect(() => { currentRoute.current = wayfinding.state; }, [wayfinding.state]);
   const stopMovement = useCallback(() => {
     motion.current?.abort();
@@ -180,7 +185,7 @@ export function SceneViewer({ modelId, name }: { modelId: string; name: string }
   function submit(event: FormEvent) {
     event.preventDefault();
     interruptVoice.current?.();
-    if (query.trim()) { setFolded(false); wayfinding.find(query.trim()); }
+    if (query.trim()) { setFolded(false); spokenSearch.current = query.trim(); wayfinding.find(query.trim()); }
   }
 
   async function nextStop() {
@@ -294,6 +299,37 @@ export function SceneViewer({ modelId, name }: { modelId: string; name: string }
       speedMps: performance.now() - velocity.current.at < 500 ? velocity.current.mps : 0, moving: Boolean(motion.current) };
   }
 
+  function guidanceNow() {
+    const current = currentRoute.current;
+    if (current.status !== "ready" || !current.plan) return null;
+    const live = livePose();
+    const position = live?.position ?? (sim ? simFloor.current : pano ? sweeps.current.find((s) => s.id === sweepId)?.position
+      : sdk && pose.current ? toApi(sdk, pose.current.position) : null);
+    const heading = live?.headingDeg ?? viewControl.current?.heading();
+    if (!position) return null;
+    const snap = guidanceSnapshot(current.plan, position, heading, live?.speedMps,
+      { eye: live?.eye, vfovDeg: live?.vfovDeg, aspect: live?.aspect, pitchDeg: live?.pitchDeg }, framedItem.current === current.plan);
+    framedItem.current = snap?.centred ? current.plan : null;
+    return snap;
+  }
+
+  // Typed searches are read aloud like voice answers, but never start walking.
+  useEffect(() => {
+    const state = wayfinding.state;
+    const query = spokenSearch.current;
+    if (!query || state.status === "loading" || state.status === "idle") return;
+    spokenSearch.current = null;
+    let text: string;
+    if (state.status === "choose") text = `Which do you mean: ${[...new Set(state.options.map((o) => o.name))].slice(0, 4).join(", ")}?`;
+    else if (state.status === "error") text = state.message;
+    else if (state.plan && "reason" in state.plan) text = state.plan.reason;
+    else if (state.plan?.status === "ALREADY_THERE") text = `You're at ${state.plan.item.name}.`;
+    else if (state.plan?.status === "OK") text = guidanceNow()?.cue.text ?? `${state.plan.item.name}. ${state.plan.legs[0]?.text ?? ""}`;
+    else text = state.reply ?? "";
+    announce.current?.(text, query);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once per search answer
+  }, [wayfinding.state]);
+
   const s = wayfinding.state;
   return (
     <div className="workspace">
@@ -365,7 +401,7 @@ export function SceneViewer({ modelId, name }: { modelId: string; name: string }
             {!folded && s.status === "choose" && (
               <ul className="m-0 mt-2 flex list-none flex-col gap-1 p-0">
                 {s.options.map((option) => (
-                  <li key={option.id}><Button variant="outline" className="h-11 w-full justify-start" onClick={() => wayfinding.choose(option)}>{option.name}</Button></li>
+                  <li key={option.id}><Button variant="outline" className="h-11 w-full justify-start" onClick={() => { spokenSearch.current = option.name; wayfinding.choose(option); }}>{option.name}</Button></li>
                 ))}
               </ul>
             )}
@@ -393,7 +429,7 @@ export function SceneViewer({ modelId, name }: { modelId: string; name: string }
       {toolError && <p role="alert" className="absolute right-4 bottom-4 left-4 m-0 w-fit max-w-sm rounded-md bg-popover p-3 text-body text-destructive">{toolError}</p>}
           </section>
         </main>
-        <VoicePanel interruptRef={interruptVoice} modelId={modelId} onPickItem={setQuery} activity={s.status === "loading" ? "Finding destination" : null} search={<>
+        <VoicePanel interruptRef={interruptVoice} announceRef={announce} modelId={modelId} onPickItem={setQuery} activity={s.status === "loading" ? s.label ?? "Finding destination" : null} search={<>
           <Logo />
           <form onSubmit={submit} className="destination-search" role="search" aria-label="Search the map">
             <Search className="search-leading size-4" aria-hidden="true" />
@@ -417,15 +453,8 @@ export function SceneViewer({ modelId, name }: { modelId: string; name: string }
           apply: applyVoice,
           stop: stopMovement,
           moving: () => Boolean(motion.current || viewControl.current?.moving()),
-          guidance: () => {
-            const current = currentRoute.current;
-            if (current.status !== "ready" || !current.plan) return null;
-            const live = livePose();
-            const position = live?.position ?? (sim ? simFloor.current : pano ? sweeps.current.find((s) => s.id === sweepId)?.position
-              : sdk && pose.current ? toApi(sdk, pose.current.position) : null);
-            const heading = live?.headingDeg ?? viewControl.current?.heading();
-            return position ? guidanceFor(current.plan, position, heading, live?.speedMps) : null;
-          },
+          guidance: guidanceNow,
+          arrive: () => { stopMovement(); currentRoute.current = { status: "idle" }; framedItem.current = null; wayfinding.clear(); },
         }} />
       </div>
     </div>

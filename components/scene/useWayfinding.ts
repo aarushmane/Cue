@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RoutePlan, SceneItem, Vec3 } from "@/lib/wayfinding/types";
+import type { VoiceEvent, VoiceResult } from "@/lib/voice/types";
 
 export type WayfindingStart = { sweep_id?: string; position?: Vec3 };
 export type WayfindingContext = { start: WayfindingStart; waypoints?: { id: string; position: Vec3; floor_id: string | null; neighbors: string[] }[] };
 
 export type WayfindingState =
   | { status: "idle" }
-  | { status: "loading"; query: string }
+  | { status: "loading"; query: string; label?: string }
   | { status: "ready"; query: string; reply: string | null; item: SceneItem | null; plan: RoutePlan | null }
   | { status: "choose"; query: string; options: SceneItem[] }
   | { status: "error"; query: string; message: string };
@@ -18,8 +19,36 @@ async function post(path: string, body: unknown, signal: AbortSignal) {
   return { response, data: await response.json().catch(() => ({})) as Record<string, unknown> };
 }
 
+type StreamEvent = VoiceEvent | { type: "result"; data: VoiceResult } | { type: "error"; error: string };
+
+/** Read the voice route's NDJSON stream, calling `onEvent` per line. */
+async function stream(body: unknown, signal: AbortSignal, onEvent: (event: StreamEvent) => void) {
+  const response = await fetch("/api/wayfinding/voice", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal });
+  if (!response.ok || !response.body) {
+    const data = await response.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(String(data.error ?? "Could not search the scene."));
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const flush = (line: string) => {
+    if (!line.trim()) return;
+    try { onEvent(JSON.parse(line) as StreamEvent); } catch { /* skip malformed line */ }
+  };
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    lines.forEach(flush);
+  }
+  flush(buffer + decoder.decode());
+}
+
 /**
- * Search the saved catalog and plan once. A miss never starts a second agent search.
+ * Search the saved catalog and plan. A catalog miss on a typed query falls back to the AI search (photos + agent),
+ * but its movement actions are ignored: a typed search never moves the visitor.
  */
 export function useWayfinding(modelId: string, context: () => WayfindingContext) {
   const [state, setState] = useState<WayfindingState>({ status: "idle" });
@@ -53,6 +82,28 @@ export function useWayfinding(modelId: string, context: () => WayfindingContext)
       const { response, data } = result;
       if (abort.signal.aborted) return;
       if (data.status === "AMBIGUOUS") return setState({ status: "choose", query, options: data.options as SceneItem[] });
+      if (response.status === 404 && data.status === "ITEM_NOT_FOUND" && typeof body.query === "string") {
+        let settled = false;
+        await stream(payload, abort.signal, (event) => {
+          if (abort.signal.aborted) return;
+          if (event.type === "progress") {
+            if (!settled) setState({ status: "loading", query, label: event.label });
+          } else if (event.type === "route") {
+            settled = true;
+            setState({ status: "ready", query, reply: null, item: event.item ?? ("item" in event.plan ? event.plan.item : null), plan: event.plan });
+          } else if (event.type === "result") {
+            settled = true;
+            const { reply, item, plan } = event.data;
+            setState({ status: "ready", query, reply: reply || null, item: item ?? null, plan: plan ?? null });
+          } else if (event.type === "error") {
+            settled = true;
+            setState({ status: "error", query, message: event.error || "Could not search the scene." });
+          }
+          // "action" events are ignored: typed search never moves the visitor.
+        });
+        if (!settled && !abort.signal.aborted) setState({ status: "error", query, message: "Could not search the scene." });
+        return;
+      }
       if (!response.ok && !data.plan) {
         return setState({ status: "error", query, message: String(data.reason ?? data.error ?? "Could not plan a route.") });
       }
