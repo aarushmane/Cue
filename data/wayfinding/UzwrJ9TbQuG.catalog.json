@@ -1,0 +1,1311 @@
+{
+ "at": 1794715464218,
+ "items": [
+  {
+   "id": "catalog:cocacola:0",
+   "name": "Coca-Cola",
+   "brand": "Coca-Cola",
+   "aliases": [
+    "Coca-Cola",
+    "Classic",
+    "Soda"
+   ],
+   "category": "soda",
+   "position": {
+    "x": 8.36328562884616,
+    "y": 2.952131662033904,
+    "z": 1.4932805880339821
+   },
+   "source": "vision",
+   "confidence": 0.85
+  },
+  {
+   "id": "catalog:kraft:0",
+   "name": "Kraft",
+   "brand": "Kraft",
+   "aliases": [
+    "BBQ Sauce",
+    "Barbecue Sauce",
+    "Salad Dressing"
+   ],
+   "category": "sauce",
+   "position": {
+    "x": 8.525366335718347,
+    "y": 4.718456641094837,
+    "z": 0.980756146199882
+   },
+   "source": "vision",
+   "confidence": 0.85
+  },
+  {
+   "id": "catalog:maruchan:0",
+   "name": "Maruchan",
+   "brand": "Maruchan",
+   "aliases": [
+    "Ramen Noodle Soup",
+    "Hot & Spicy",
+    "Instant Lunch"
+   ],
+   "category": "noodles",
+   "position": {
+    "x": 7.160901706736336,
+    "y": 4.44076503254721,
+    "z": 0.7061706475415217
+   },
+   "source": "vision",
+   "confidence": 0.54
+  },
+  {
+   "id": "catalog:sprite:0",
+   "name": "Sprite",
+   "brand": "Sprite",
+   "aliases": [
+    "Lemon Lime",
+    "Sprite"
+   ],
+   "category": "soda",
+   "position": {
+    "x": 8.3112939722371,
+    "y": 2.5603814797473317,
+    "z": 1.5062175231688364
+   },
+   "source": "vision",
+   "confidence": 0.85
+  },
+  {
+   "id": "catalog:sprite:1",
+   "name": "Sprite",
+   "brand": "Sprite",
+   "aliases": [
+    "Lemon Lime"
+   ],
+   "category": "soda",
+   "position": {
+    "x": 11.697245703255426,
+    "y": -1.5113754897118024,
+    "z": 2.0070321731376817
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:kelloggs:0",
+   "name": "Kellogg's",
+   "brand": "Kellogg's",
+   "aliases": [
+    "Raisin Bran",
+    "Corn Flakes"
+   ],
+   "category": "cereal",
+   "position": {
+    "x": 7.175972116146589,
+    "y": 2.9474192152385523,
+    "z": 1.415166008672836
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:njoy:0",
+   "name": "NJoy",
+   "brand": "NJoy",
+   "aliases": [
+    "Coffee Creamer",
+    "Pure Sugar"
+   ],
+   "category": "creamer",
+   "position": {
+    "x": 7.904504991552429,
+    "y": 2.945330981571848,
+    "z": 0.9975711721954914
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:folgers:0",
+   "name": "Folgers",
+   "brand": "Folgers",
+   "aliases": [
+    "Classic Roast",
+    "Classic Decaf"
+   ],
+   "category": "coffee",
+   "position": {
+    "x": 7.11899152546696,
+    "y": 2.9545143071617237,
+    "z": 0.9876608796615176
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:kitchenbeyond:0",
+   "name": "Kitchen Beyond",
+   "brand": "Kitchen Beyond",
+   "aliases": [
+    "Sandwich Bags"
+   ],
+   "category": "bags",
+   "position": {
+    "x": 7.68197295139812,
+    "y": 2.9434028208816896,
+    "z": 0.7131571077328365
+   },
+   "source": "vision",
+   "confidence": 0.39
+  },
+  {
+   "id": "catalog:nescafe:0",
+   "name": "Nescafé",
+   "brand": "Nescafé",
+   "aliases": [
+    "Clasico",
+    "Extraforte"
+   ],
+   "category": "coffee",
+   "position": {
+    "x": 7.009913586282206,
+    "y": 2.9571767849021993,
+    "z": 1.0006137849938714
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:tonychacheres:0",
+   "name": "Tony Chachere's",
+   "brand": "Tony Chachere's",
+   "aliases": [
+    "Gumbo Mix",
+    "Etouffee Mix",
+    "Chili Mix"
+   ],
+   "category": "dinner mix",
+   "position": {
+    "x": 5.992281945434432,
+    "y": 4.370555888754964,
+    "z": 1.279023138200567
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:hamburgerhelper:0",
+   "name": "Hamburger Helper",
+   "brand": "Hamburger Helper",
+   "aliases": [
+    "Bacon Cheeseburger",
+    "Spaghetti",
+    "Four Cheese Lasagna",
+    "Stroganoff"
+   ],
+   "category": "dinner mix",
+   "position": {
+    "x": 6.523347378598959,
+    "y": 4.374767323800129,
+    "z": 1.2894970527415037
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:chickenhelper:0",
+   "name": "Chicken Helper",
+   "brand": "Chicken Helper",
+   "aliases": [
+    "Chicken Fried Rice"
+   ],
+   "category": "dinner mix",
+   "position": {
+    "x": 6.628017411949004,
+    "y": 4.3762823523607155,
+    "z": 1.2903761755743366
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:cheetos:0",
+   "name": "Cheetos",
+   "brand": "Cheetos",
+   "aliases": [
+    "Flamin Hot",
+    "Crunchy",
+    "Puffs"
+   ],
+   "category": "chips",
+   "position": {
+    "x": 1.5502696577684518,
+    "y": 0.6856166526238745,
+    "z": 1.0522313499850444
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:cheetos:1",
+   "name": "Cheetos",
+   "brand": "Cheetos",
+   "aliases": [
+    "Mac 'n Cheese"
+   ],
+   "category": "pasta",
+   "position": {
+    "x": 5.905226538085791,
+    "y": 4.371326895729178,
+    "z": 1.0230108452394142
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:cheetos:2",
+   "name": "Cheetos",
+   "brand": "Cheetos",
+   "aliases": [
+    "Crunchy"
+   ],
+   "category": "chips",
+   "position": {
+    "x": 3.2654207934981403,
+    "y": 1.3283347460246255,
+    "z": 2.7951123845128394
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:velveeta:0",
+   "name": "Velveeta",
+   "brand": "Velveeta",
+   "aliases": [
+    "Shells & Cheese"
+   ],
+   "category": "pasta",
+   "position": {
+    "x": 6.696798739405425,
+    "y": 4.375034998175439,
+    "z": 0.9627073528965777
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:jiffy:0",
+   "name": "Jiffy",
+   "brand": "Jiffy",
+   "aliases": [
+    "Corn Muffin Mix"
+   ],
+   "category": "baking mix",
+   "position": {
+    "x": 7.932174754179989,
+    "y": 6.248854574067518,
+    "z": 1.4186120355306546
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:busch:0",
+   "name": "Busch",
+   "brand": "Busch",
+   "aliases": [
+    "Beer"
+   ],
+   "category": "beer",
+   "position": {
+    "x": 2.950736314405244,
+    "y": 3.7147185533821556,
+    "z": 0.3801847690348094
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:busch:1",
+   "name": "Busch",
+   "brand": "Busch",
+   "aliases": [
+    "Beer"
+   ],
+   "category": "beer",
+   "position": {
+    "x": 1.7090502471347047,
+    "y": 3.742896353302098,
+    "z": 0.5398563134624579
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:busch:2",
+   "name": "Busch",
+   "brand": "Busch",
+   "aliases": [
+    "Busch"
+   ],
+   "category": "beer",
+   "position": {
+    "x": 0.5364320938840947,
+    "y": 3.003815184191487,
+    "z": 2.8155041819674347
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:buschlight:0",
+   "name": "Busch Light",
+   "brand": "Busch Light",
+   "aliases": [
+    "Beer"
+   ],
+   "category": "beer",
+   "position": {
+    "x": 2.0492687052796676,
+    "y": 3.735706734973274,
+    "z": 0.5073019059851658
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:takis:0",
+   "name": "Takis",
+   "brand": "Takis",
+   "aliases": [
+    "Kettlez Fuego",
+    "Stix Flare",
+    "WAVES Fuego",
+    "Stix Fuego",
+    "Blue Heat",
+    "Fuego"
+   ],
+   "category": "chips",
+   "position": {
+    "x": 1.756112456803489,
+    "y": 1.5674039238169142,
+    "z": 1.0741444537349194
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:jollyrancher:0",
+   "name": "Jolly Rancher",
+   "brand": "Jolly Rancher",
+   "aliases": [
+    "Frozen Beverage"
+   ],
+   "category": "beverage",
+   "position": {
+    "x": -0.3276569310104176,
+    "y": -1.6408032424067311,
+    "z": 2.0554929185415656
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:budlight:0",
+   "name": "Bud Light",
+   "brand": "Bud Light",
+   "aliases": [
+    "Beer",
+    "Bud Light"
+   ],
+   "category": "beer",
+   "position": {
+    "x": -0.6819741496284948,
+    "y": 1.8851178492654208,
+    "z": 2.5259641033468063
+   },
+   "source": "vision",
+   "confidence": 0.85
+  },
+  {
+   "id": "catalog:budlight:1",
+   "name": "Bud Light",
+   "brand": "Bud Light",
+   "aliases": [
+    "Beer",
+    "Bud Light"
+   ],
+   "category": "beer",
+   "position": {
+    "x": -0.7011260237651229,
+    "y": 5.6779241934713545,
+    "z": 2.5425168626778207
+   },
+   "source": "vision",
+   "confidence": 0.85
+  },
+  {
+   "id": "catalog:budlight:2",
+   "name": "Bud Light",
+   "brand": "Bud Light",
+   "aliases": [
+    "Bud Light"
+   ],
+   "category": "beer",
+   "position": {
+    "x": 5.870310929215285,
+    "y": 8.40611249862707,
+    "z": 2.4598489754462665
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:budlight:3",
+   "name": "Bud Light",
+   "brand": "Bud Light",
+   "aliases": [
+    "Bud Light"
+   ],
+   "category": "beer",
+   "position": {
+    "x": 3.5398553032098294,
+    "y": 6.3579661726821115,
+    "z": 0.83012012111899
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:budlight:4",
+   "name": "Bud Light",
+   "brand": "Bud Light",
+   "aliases": [
+    "Bud Light"
+   ],
+   "category": "beer",
+   "position": {
+    "x": 3.770888802532477,
+    "y": 8.407288442993108,
+    "z": 2.3918806055990762
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:budlight:5",
+   "name": "Bud Light",
+   "brand": "Bud Light",
+   "aliases": [
+    "Bud Light"
+   ],
+   "category": "beer",
+   "position": {
+    "x": 2.0724293899269046,
+    "y": 8.390050411222955,
+    "z": 2.433216273282313
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:incense:0",
+   "name": "Incense",
+   "brand": "Incense",
+   "aliases": [
+    "Natural"
+   ],
+   "category": "incense",
+   "position": {
+    "x": -0.47820846202475964,
+    "y": 1.7434364788308967,
+    "z": 1.197138528925063
+   },
+   "source": "vision",
+   "confidence": 0.39
+  },
+  {
+   "id": "catalog:aromafusion:0",
+   "name": "Aroma Fusion",
+   "brand": "Aroma Fusion",
+   "aliases": [
+    "Incense",
+    "Aroma Fusion Incense Sticks"
+   ],
+   "category": "incense",
+   "position": {
+    "x": -0.47970753024688423,
+    "y": 1.3848802590722336,
+    "z": 1.2525073679487777
+   },
+   "source": "vision",
+   "confidence": 0.85
+  },
+  {
+   "id": "catalog:bluebunny:0",
+   "name": "Blue Bunny",
+   "brand": "Blue Bunny",
+   "aliases": [
+    "Ice Cream",
+    "Ice Cream Sandwich",
+    "Cone"
+   ],
+   "category": "ice cream",
+   "position": {
+    "x": 0.0996262294257479,
+    "y": 2.147576807774429,
+    "z": 0.46594716173822015
+   },
+   "source": "vision",
+   "confidence": 0.85
+  },
+  {
+   "id": "catalog:gpc:0",
+   "name": "GPC",
+   "brand": "GPC",
+   "aliases": [
+    "Cigarettes"
+   ],
+   "category": "cigarettes",
+   "position": {
+    "x": -0.026307898176163302,
+    "y": 1.1068533805385805,
+    "z": 0.08280409021769675
+   },
+   "source": "vision",
+   "confidence": 0.39
+  },
+  {
+   "id": "catalog:newport:0",
+   "name": "Newport",
+   "brand": "Newport",
+   "aliases": [
+    "Cigarettes"
+   ],
+   "category": "tobacco",
+   "position": {
+    "x": -0.716053469592485,
+    "y": 3.7388832644780465,
+    "z": 2.2048479279175757
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:newport:1",
+   "name": "Newport",
+   "brand": "Newport",
+   "aliases": [
+    "Cigarettes"
+   ],
+   "category": "cigarettes",
+   "position": {
+    "x": -2.6196726330833204,
+    "y": 2.9959067328016986,
+    "z": 2.280082215717739
+   },
+   "source": "vision",
+   "confidence": 0.39
+  },
+  {
+   "id": "catalog:countryrecipe:0",
+   "name": "Country Recipe",
+   "brand": "Country Recipe",
+   "aliases": [
+    "Cracklin Strips"
+   ],
+   "category": "snack",
+   "position": {
+    "x": 1.2492280375524853,
+    "y": 3.16912488500872,
+    "z": 1.1868445481655039
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:kool:0",
+   "name": "Kool",
+   "brand": "Kool",
+   "aliases": [
+    "Kool Cigarettes"
+   ],
+   "category": "tobacco",
+   "position": {
+    "x": -1.5910805710195937,
+    "y": -1.4177538368043994,
+    "z": 1.0526669782808948
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:kool:1",
+   "name": "Kool",
+   "brand": "Kool",
+   "aliases": [
+    "Cigarettes"
+   ],
+   "category": "tobacco",
+   "position": {
+    "x": -0.7265512628143891,
+    "y": 3.948111855313867,
+    "z": 2.023424244654202
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:maverick:0",
+   "name": "Maverick",
+   "brand": "Maverick",
+   "aliases": [
+    "Maverick Cigarettes"
+   ],
+   "category": "tobacco",
+   "position": {
+    "x": -1.7228231369592626,
+    "y": -1.3018097099300583,
+    "z": 0.8830662818916972
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:winston:0",
+   "name": "Winston",
+   "brand": "Winston",
+   "aliases": [
+    "Winston Cigarettes"
+   ],
+   "category": "tobacco",
+   "position": {
+    "x": -1.5909464292869444,
+    "y": -1.4219508459286432,
+    "z": 1.2375828604118202
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:tobacco:0",
+   "name": "Tobacco",
+   "brand": "Tobacco",
+   "aliases": [
+    "Tobacco"
+   ],
+   "category": "tobacco",
+   "position": {
+    "x": -1.5967809315831223,
+    "y": -1.4222557864657384,
+    "z": 1.3721651104406543
+   },
+   "source": "vision",
+   "confidence": 0.39
+  },
+  {
+   "id": "catalog:honestthief:0",
+   "name": "Honest Thief",
+   "brand": "Honest Thief",
+   "aliases": [
+    "Honest Thief DVD"
+   ],
+   "category": "movie",
+   "position": {
+    "x": -0.5829961069455116,
+    "y": 0.9346476633540073,
+    "z": 1.07668262164412
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:nobody:0",
+   "name": "Nobody",
+   "brand": "Nobody",
+   "aliases": [
+    "Nobody DVD"
+   ],
+   "category": "movie",
+   "position": {
+    "x": -0.5589610985457564,
+    "y": 0.9194543682636146,
+    "z": 0.9673950129800144
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:lookingcatty:0",
+   "name": "Looking Catty",
+   "brand": "Looking Catty",
+   "aliases": [
+    "Looking Catty DVD"
+   ],
+   "category": "movie",
+   "position": {
+    "x": -0.5608109321024626,
+    "y": 0.9159878969021558,
+    "z": 0.7956919073633446
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:kovakbox:0",
+   "name": "Kovak Box",
+   "brand": "Kovak Box",
+   "aliases": [
+    "Kovak Box DVD"
+   ],
+   "category": "movie",
+   "position": {
+    "x": -0.5490690187765196,
+    "y": 0.9140137792916336,
+    "z": 0.5862801784421443
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:blackwidow:0",
+   "name": "Black Widow",
+   "brand": "Black Widow",
+   "aliases": [
+    "Black Widow DVD"
+   ],
+   "category": "movie",
+   "position": {
+    "x": -0.6495563331930356,
+    "y": 0.6830026576953956,
+    "z": 1.1876403315773576
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:watch:0",
+   "name": "Watch",
+   "brand": "Watch",
+   "aliases": [
+    "Watch DVD"
+   ],
+   "category": "movie",
+   "position": {
+    "x": -0.6040606967163951,
+    "y": 0.7805388974971965,
+    "z": 0.8063943814339086
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:witches:0",
+   "name": "Witches",
+   "brand": "Witches",
+   "aliases": [
+    "Witches DVD"
+   ],
+   "category": "movie",
+   "position": {
+    "x": -0.641932073662745,
+    "y": 0.6889122046661436,
+    "z": 0.558739572594107
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:ruffles:0",
+   "name": "Ruffles",
+   "brand": "Ruffles",
+   "aliases": [
+    "Original",
+    "Queso"
+   ],
+   "category": "chips",
+   "position": {
+    "x": 1.598630944264147,
+    "y": 0.3258534852813265,
+    "z": 0.5523269097309261
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:doritos:0",
+   "name": "Doritos",
+   "brand": "Doritos",
+   "aliases": [
+    "Nacho Cheese",
+    "Dinamita"
+   ],
+   "category": "chips",
+   "position": {
+    "x": 1.5575015026466272,
+    "y": 0.5426469362358832,
+    "z": 0.6600454981220746
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:doritos:1",
+   "name": "Doritos",
+   "brand": "Doritos",
+   "aliases": [
+    "Nacho Cheese"
+   ],
+   "category": "chips",
+   "position": {
+    "x": 11.40809088073628,
+    "y": 4.553614329597213,
+    "z": 1.4570759380920004
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:lays:0",
+   "name": "Lays",
+   "brand": "Lays",
+   "aliases": [
+    "Classic",
+    "Lemon"
+   ],
+   "category": "chips",
+   "position": {
+    "x": 1.571797178452425,
+    "y": 0.7406009493606367,
+    "z": 0.150287388555877
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:fritos:0",
+   "name": "Fritos",
+   "brand": "Fritos",
+   "aliases": [
+    "Flavor Twists",
+    "Original"
+   ],
+   "category": "chips",
+   "position": {
+    "x": 1.5381565973119598,
+    "y": 0.4732158370998901,
+    "z": 0.7604557584665991
+   },
+   "source": "vision",
+   "confidence": 0.52
+  },
+  {
+   "id": "catalog:funyuns:0",
+   "name": "Funyuns",
+   "brand": "Funyuns",
+   "aliases": [
+    "Original"
+   ],
+   "category": "chips",
+   "position": {
+    "x": 1.5377995228505619,
+    "y": 0.4988317525208219,
+    "z": 0.43571795607100994
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:munchies:0",
+   "name": "Munchies",
+   "brand": "Munchies",
+   "aliases": [
+    "Cheese Mix"
+   ],
+   "category": "chips",
+   "position": {
+    "x": 1.55945170281469,
+    "y": 0.7069809908270831,
+    "z": 1.3663092573558233
+   },
+   "source": "vision",
+   "confidence": 0.39
+  },
+  {
+   "id": "catalog:matador:0",
+   "name": "Matador",
+   "brand": "Matador",
+   "aliases": [
+    "Original Beef Jerky",
+    "Beef Jerky"
+   ],
+   "category": "jerky",
+   "position": {
+    "x": 1.528223251646366,
+    "y": 0.11109313945422036,
+    "z": 1.0913542610323828
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:matador:1",
+   "name": "Matador",
+   "brand": "Matador",
+   "aliases": [
+    "Beef Jerky"
+   ],
+   "category": "jerky",
+   "position": {
+    "x": 6.701227418241871,
+    "y": 1.7862123477513199,
+    "z": 2.752925943125658
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:vans:0",
+   "name": "Vans",
+   "brand": "Vans",
+   "aliases": [
+    "Hat"
+   ],
+   "category": "clothing",
+   "position": {
+    "x": 1.6832151203267272,
+    "y": -1.3693740094342732,
+    "z": 2.328613606687194
+   },
+   "source": "vision",
+   "confidence": 0.39
+  },
+  {
+   "id": "catalog:monster:0",
+   "name": "Monster",
+   "brand": "Monster",
+   "aliases": [
+    "Energy"
+   ],
+   "category": "energy drink",
+   "position": {
+    "x": 4.153569358647634,
+    "y": -1.031268125099374,
+    "z": 1.5153394312030948
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:pepsi:0",
+   "name": "Pepsi",
+   "brand": "Pepsi",
+   "aliases": [
+    "Pepsi"
+   ],
+   "category": "soda",
+   "position": {
+    "x": 9.331800310420306,
+    "y": -0.7367107167936422,
+    "z": 1.919404136768883
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:pepsi:1",
+   "name": "Pepsi",
+   "brand": "Pepsi",
+   "aliases": [
+    "Pepsi"
+   ],
+   "category": "soda",
+   "position": {
+    "x": 2.2298855537384537,
+    "y": 6.435067724943249,
+    "z": 1.3197306607509878
+   },
+   "source": "vision",
+   "confidence": 0.39
+  },
+  {
+   "id": "catalog:drpepper:0",
+   "name": "Dr Pepper",
+   "brand": "Dr Pepper",
+   "aliases": [
+    "Dr Pepper"
+   ],
+   "category": "soda",
+   "position": {
+    "x": 8.23741350843032,
+    "y": -0.7434907244305462,
+    "z": 1.894232534984245
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:7up:0",
+   "name": "7-Up",
+   "brand": "7-Up",
+   "aliases": [
+    "Soda"
+   ],
+   "category": "soda",
+   "position": {
+    "x": 8.536469873663556,
+    "y": 2.6641041070660343,
+    "z": 1.494973208146086
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:tabasco:0",
+   "name": "Tabasco",
+   "brand": "Tabasco",
+   "aliases": [
+    "Hot Sauce",
+    "Jalapeno Sauce",
+    "Original Sauce",
+    "Pepper Sauce"
+   ],
+   "category": "sauce",
+   "position": {
+    "x": 8.486756548515254,
+    "y": 4.3586428807424955,
+    "z": 1.2522273795437127
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:pace:0",
+   "name": "Pace",
+   "brand": "Pace",
+   "aliases": [
+    "Picante Sauce"
+   ],
+   "category": "salsa",
+   "position": {
+    "x": 8.532561699705651,
+    "y": 4.642688296667021,
+    "z": 0.7059686229624073
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:trappeys:0",
+   "name": "Trappey's",
+   "brand": "Trappey's",
+   "aliases": [
+    "Louisiana Hot Sauce"
+   ],
+   "category": "sauce",
+   "position": {
+    "x": 8.517029861767387,
+    "y": 4.741826554849648,
+    "z": 1.3457872834578215
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:littledebbie:0",
+   "name": "Little Debbie",
+   "brand": "Little Debbie",
+   "aliases": [
+    "Devil Cremes",
+    "Honey Buns",
+    "Spinwheels",
+    "Mini Muffins",
+    "Donuts",
+    "Nutty Buddy",
+    "Chocolate Chip"
+   ],
+   "category": "snack cakes",
+   "position": {
+    "x": 5.254298390122595,
+    "y": 2.5823231325600586,
+    "z": 0.9121023936499421
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:littledebbie:1",
+   "name": "Little Debbie",
+   "brand": "Little Debbie",
+   "aliases": [
+    "Fudge Rounds"
+   ],
+   "category": "cookies",
+   "position": {
+    "x": 4.580822949961497,
+    "y": 4.202960201623217,
+    "z": 0.7745114219799238
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:wonderful:0",
+   "name": "Wonderful",
+   "brand": "Wonderful",
+   "aliases": [
+    "Pistachios"
+   ],
+   "category": "nuts",
+   "position": {
+    "x": 5.290116439105461,
+    "y": 2.5503070133505013,
+    "z": 1.4363709004418461
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:snackerz:0",
+   "name": "Snackerz",
+   "brand": "Snackerz",
+   "aliases": [
+    "Cherry Belts"
+   ],
+   "category": "candy",
+   "position": {
+    "x": 3.1714201756454186,
+    "y": 2.7628819396863724,
+    "z": 0.960546149995966
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:gutleut:0",
+   "name": "Gutleut",
+   "brand": "Gutleut",
+   "aliases": [
+    "Gummy Blue Sharks"
+   ],
+   "category": "candy",
+   "position": {
+    "x": 3.2369650662403346,
+    "y": 2.7088168786204707,
+    "z": 1.2841428543826992
+   },
+   "source": "vision",
+   "confidence": 0.39
+  },
+  {
+   "id": "catalog:tootsie:0",
+   "name": "Tootsie",
+   "brand": "Tootsie",
+   "aliases": [
+    "Tootsie Pops"
+   ],
+   "category": "candy",
+   "position": {
+    "x": 2.6362180587567847,
+    "y": 6.3786583161979635,
+    "z": 1.3330023245315072
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:tootsie:1",
+   "name": "Tootsie",
+   "brand": "Tootsie",
+   "aliases": [
+    "Tootsie Pops"
+   ],
+   "category": "candy",
+   "position": {
+    "x": 4.0655334426239165,
+    "y": 6.363765995883503,
+    "z": 1.351259786359352
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:mms:0",
+   "name": "M&M's",
+   "brand": "M&M's",
+   "aliases": [
+    "M&M's"
+   ],
+   "category": "chocolate",
+   "position": {
+    "x": 2.3586112414487608,
+    "y": 6.191457206170869,
+    "z": 0.9743304357479049
+   },
+   "source": "vision",
+   "confidence": 0.51
+  },
+  {
+   "id": "catalog:mms:1",
+   "name": "M&M's",
+   "brand": "M&M's",
+   "aliases": [
+    "M&M's"
+   ],
+   "category": "chocolate",
+   "position": {
+    "x": 3.5950180740832063,
+    "y": 6.363732465077241,
+    "z": 0.5251845215945657
+   },
+   "source": "vision",
+   "confidence": 0.39
+  },
+  {
+   "id": "catalog:snickers:0",
+   "name": "Snickers",
+   "brand": "Snickers",
+   "aliases": [
+    "Snickers"
+   ],
+   "category": "chocolate",
+   "position": {
+    "x": 3.227425614373481,
+    "y": 6.2017295718209375,
+    "z": 1.0143755289189946
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:skittles:0",
+   "name": "Skittles",
+   "brand": "Skittles",
+   "aliases": [
+    "Skittles"
+   ],
+   "category": "candy",
+   "position": {
+    "x": 3.772645585721405,
+    "y": 6.265883514695748,
+    "z": 0.25614515949969285
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:funfetti:0",
+   "name": "Funfetti",
+   "brand": "Funfetti",
+   "aliases": [
+    "Funfetti"
+   ],
+   "category": "cookies",
+   "position": {
+    "x": 5.680469656265971,
+    "y": 6.2295873312687435,
+    "z": 1.3803654927957414
+   },
+   "source": "vision",
+   "confidence": 0.55
+  }
+ ]
+}

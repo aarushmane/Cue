@@ -1,0 +1,823 @@
+{
+ "at": 1794709113923,
+ "items": [
+  {
+   "id": "catalog:sunkist:0",
+   "name": "Sunkist",
+   "brand": "Sunkist",
+   "aliases": [
+    "Sunkist"
+   ],
+   "category": "soda",
+   "position": {
+    "x": -4.900958588011969,
+    "y": 3.664032863151038,
+    "z": 0.4359138604839032
+   },
+   "source": "vision",
+   "confidence": 0.85
+  },
+  {
+   "id": "catalog:7up:0",
+   "name": "7 Up",
+   "brand": "7 Up",
+   "aliases": [
+    "7 Up"
+   ],
+   "category": "soda",
+   "position": {
+    "x": -4.997840288920299,
+    "y": 3.592190199866052,
+    "z": 0.46872360174638095
+   },
+   "source": "vision",
+   "confidence": 0.85
+  },
+  {
+   "id": "catalog:bigred:0",
+   "name": "Big Red",
+   "brand": "Big Red",
+   "aliases": [
+    "Big Red"
+   ],
+   "category": "soda",
+   "position": {
+    "x": -5.1880691940246875,
+    "y": 3.6704490640493455,
+    "z": 0.3091432173558636
+   },
+   "source": "vision",
+   "confidence": 0.85
+  },
+  {
+   "id": "catalog:canadadry:0",
+   "name": "Canada Dry",
+   "brand": "Canada Dry",
+   "aliases": [
+    "Canada Dry"
+   ],
+   "category": "soda",
+   "position": {
+    "x": -4.928886807768234,
+    "y": 3.586177117360989,
+    "z": 0.42451671846762384
+   },
+   "source": "vision",
+   "confidence": 0.53
+  },
+  {
+   "id": "catalog:drpepper:0",
+   "name": "Dr Pepper",
+   "brand": "Dr Pepper",
+   "aliases": [
+    "Dr Pepper"
+   ],
+   "category": "soda",
+   "position": {
+    "x": -4.739632281539477,
+    "y": 3.6182650009892194,
+    "z": 0.33310329097362135
+   },
+   "source": "vision",
+   "confidence": 0.85
+  },
+  {
+   "id": "catalog:drpepper:1",
+   "name": "Dr Pepper",
+   "brand": "Dr Pepper",
+   "aliases": [
+    "Dr Pepper"
+   ],
+   "category": "soda",
+   "position": {
+    "x": -2.8296900314379383,
+    "y": 3.8777479987094536,
+    "z": 1.5089423048086377
+   },
+   "source": "vision",
+   "confidence": 0.38
+  },
+  {
+   "id": "catalog:combos:0",
+   "name": "Combos",
+   "brand": "Combos",
+   "aliases": [
+    "Combos",
+    "Pizzeria Pretzel"
+   ],
+   "category": "snacks",
+   "position": {
+    "x": -5.526429216109687,
+    "y": 1.1805212152300983,
+    "z": 1.819837984655651
+   },
+   "source": "vision",
+   "confidence": 0.85
+  },
+  {
+   "id": "catalog:all:0",
+   "name": "all",
+   "brand": "all",
+   "aliases": [
+    "laundry detergent"
+   ],
+   "category": "detergent",
+   "position": {
+    "x": -4.611001305336854,
+    "y": -0.17160587416170237,
+    "z": 0.6415241681767037
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:sun:0",
+   "name": "Sun",
+   "brand": "Sun",
+   "aliases": [
+    "laundry detergent"
+   ],
+   "category": "detergent",
+   "position": {
+    "x": -4.728359976079032,
+    "y": -0.2948555844851999,
+    "z": 0.6512170965082791
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:xtra:0",
+   "name": "Xtra",
+   "brand": "Xtra",
+   "aliases": [
+    "laundry detergent"
+   ],
+   "category": "detergent",
+   "position": {
+    "x": -4.846478721370085,
+    "y": -0.40747293816142793,
+    "z": 0.6481208027137679
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:cocacola:0",
+   "name": "Coca-Cola",
+   "brand": "Coca-Cola",
+   "aliases": [
+    "Coca-Cola",
+    "Diet Coke",
+    "Coke"
+   ],
+   "category": "soda",
+   "position": {
+    "x": -6.090323657719783,
+    "y": 0.509129369773667,
+    "z": 0.3390260305036572
+   },
+   "source": "vision",
+   "confidence": 0.95
+  },
+  {
+   "id": "catalog:fanta:0",
+   "name": "Fanta",
+   "brand": "Fanta",
+   "aliases": [
+    "Pineapple"
+   ],
+   "category": "soda",
+   "position": {
+    "x": -6.012059073721201,
+    "y": 1.7269354333805769,
+    "z": 0.8560784250592166
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:brisk:0",
+   "name": "Brisk",
+   "brand": "Brisk",
+   "aliases": [
+    "Iced Tea",
+    "Lemon Iced Tea"
+   ],
+   "category": "tea",
+   "position": {
+    "x": -6.144636191855804,
+    "y": 1.7051765485858978,
+    "z": 0.7387727858068961
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:mountaindew:0",
+   "name": "Mountain Dew",
+   "brand": "Mountain Dew",
+   "aliases": [
+    "Mountain Dew"
+   ],
+   "category": "soda",
+   "position": {
+    "x": -5.9673502351673875,
+    "y": 1.717349558674882,
+    "z": 0.671060711040667
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:crush:0",
+   "name": "Crush",
+   "brand": "Crush",
+   "aliases": [
+    "Strawberry"
+   ],
+   "category": "soda",
+   "position": {
+    "x": -5.836449420449569,
+    "y": 1.4174691631071326,
+    "z": 0.49071344738349854
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:pepsi:0",
+   "name": "Pepsi",
+   "brand": "Pepsi",
+   "aliases": [
+    "Pepsi"
+   ],
+   "category": "soda",
+   "position": {
+    "x": -6.399119416280083,
+    "y": 2.0345995286561793,
+    "z": 0.6519720203078451
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:modelo:0",
+   "name": "Modelo",
+   "brand": "Modelo",
+   "aliases": [
+    "Lucha Libre",
+    "Modelo"
+   ],
+   "category": "beer",
+   "position": {
+    "x": -11.456081847403508,
+    "y": -0.9737866809343881,
+    "z": 2.7466355378175145
+   },
+   "source": "vision",
+   "confidence": 0.74
+  },
+  {
+   "id": "catalog:modelo:1",
+   "name": "Modelo",
+   "brand": "Modelo",
+   "aliases": [
+    "Modelo Especial"
+   ],
+   "category": "beer",
+   "position": {
+    "x": -11.002448298102522,
+    "y": 0.31467778234371296,
+    "z": 0.5209610238244666
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:modelo:2",
+   "name": "Modelo",
+   "brand": "Modelo",
+   "aliases": [
+    "Modelo Especial"
+   ],
+   "category": "beer",
+   "position": {
+    "x": -11.65321622067566,
+    "y": 0.2884001928796861,
+    "z": 2.1845815612671533
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:modelo:3",
+   "name": "Modelo",
+   "brand": "Modelo",
+   "aliases": [
+    "Modelo"
+   ],
+   "category": "beer",
+   "position": {
+    "x": -11.783745893977438,
+    "y": 4.159732583541766,
+    "z": 2.7051296052397698
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:modelo:4",
+   "name": "Modelo",
+   "brand": "Modelo",
+   "aliases": [
+    "chelada"
+   ],
+   "category": "beer",
+   "position": {
+    "x": 1.3464976985311001,
+    "y": 1.0991283808682633,
+    "z": 0.4877784566698853
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:corona:0",
+   "name": "Corona",
+   "brand": "Corona",
+   "aliases": [
+    "Corona Extra",
+    "Corona"
+   ],
+   "category": "beer",
+   "position": {
+    "x": -11.527025987494948,
+    "y": 0.8074367011277764,
+    "z": 2.860185946174167
+   },
+   "source": "vision",
+   "confidence": 0.85
+  },
+  {
+   "id": "catalog:corona:1",
+   "name": "Corona",
+   "brand": "Corona",
+   "aliases": [
+    "Extra"
+   ],
+   "category": "beer",
+   "position": {
+    "x": 1.029449765679486,
+    "y": 3.7084359456079268,
+    "z": 0.4169420132934465
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:corona:2",
+   "name": "Corona",
+   "brand": "Corona",
+   "aliases": [
+    "Corona"
+   ],
+   "category": "beer",
+   "position": {
+    "x": -8.684305689115389,
+    "y": 4.141243625087006,
+    "z": 2.4450580970267115
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:doritos:0",
+   "name": "Doritos",
+   "brand": "Doritos",
+   "aliases": [
+    "Nacho Cheese"
+   ],
+   "category": "chips",
+   "position": {
+    "x": -5.607307481727688,
+    "y": 0.9235407793426545,
+    "z": 0.6146461777405066
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:doritos:1",
+   "name": "Doritos",
+   "brand": "Doritos",
+   "aliases": [
+    "chips"
+   ],
+   "category": "chips",
+   "position": {
+    "x": 1.3099249085099247,
+    "y": -2.822623040196371,
+    "z": 1.220983233056066
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:doritos:2",
+   "name": "Doritos",
+   "brand": "Doritos",
+   "aliases": [
+    "chips"
+   ],
+   "category": "chips",
+   "position": {
+    "x": 0.6183486953779255,
+    "y": -7.8639521461943325,
+    "z": 2.677735352825149
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:takis:0",
+   "name": "Takis",
+   "brand": "Takis",
+   "aliases": [
+    "Fuego"
+   ],
+   "category": "chips",
+   "position": {
+    "x": -5.564150512689598,
+    "y": 1.0280202970562018,
+    "z": 1.0641763917081728
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:takis:1",
+   "name": "Takis",
+   "brand": "Takis",
+   "aliases": [
+    "Fuego"
+   ],
+   "category": "chips",
+   "position": {
+    "x": 0.1870528622198929,
+    "y": -1.429542230105703,
+    "z": 0.4545539275706798
+   },
+   "source": "vision",
+   "confidence": 0.39
+  },
+  {
+   "id": "catalog:takis:2",
+   "name": "Takis",
+   "brand": "Takis",
+   "aliases": [
+    "Fuego"
+   ],
+   "category": "chips",
+   "position": {
+    "x": 1.421737994641564,
+    "y": -2.760592683946827,
+    "z": 1.2976842371837907
+   },
+   "source": "vision",
+   "confidence": 0.39
+  },
+  {
+   "id": "catalog:cheetos:0",
+   "name": "Cheetos",
+   "brand": "Cheetos",
+   "aliases": [
+    "Flamin Hot"
+   ],
+   "category": "chips",
+   "position": {
+    "x": -5.489256595837802,
+    "y": 1.2084596495285669,
+    "z": 1.0148142327854455
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:cheetos:1",
+   "name": "Cheetos",
+   "brand": "Cheetos",
+   "aliases": [
+    "Puffs"
+   ],
+   "category": "chips",
+   "position": {
+    "x": 0.05420590756587031,
+    "y": -1.3959172129345438,
+    "z": 0.9900381787065379
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:ozarka:0",
+   "name": "Ozarka",
+   "brand": "Ozarka",
+   "aliases": [
+    "Spring Water"
+   ],
+   "category": "water",
+   "position": {
+    "x": -2.680846514931065,
+    "y": 0.8033615975792896,
+    "z": 1.1464128529100912
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:nongshim:0",
+   "name": "Nongshim",
+   "brand": "Nongshim",
+   "aliases": [
+    "Neoguri"
+   ],
+   "category": "noodles",
+   "position": {
+    "x": -2.576237201218483,
+    "y": -0.9522719305315621,
+    "z": 1.1271747887610193
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:chowmein:0",
+   "name": "Chow Mein",
+   "brand": "Chow Mein",
+   "aliases": [
+    "Teriyaki",
+    "Teriyaki Beef"
+   ],
+   "category": "noodles",
+   "position": {
+    "x": -2.5230018770123,
+    "y": -0.9559030474159966,
+    "z": 0.2827596545005292
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:nissin:0",
+   "name": "Nissin",
+   "brand": "Nissin",
+   "aliases": [
+    "Bowl Noodles"
+   ],
+   "category": "noodles",
+   "position": {
+    "x": -2.5466097335144458,
+    "y": -0.8243985254638435,
+    "z": 0.6122627928070012
+   },
+   "source": "vision",
+   "confidence": 0.47
+  },
+  {
+   "id": "catalog:maruchan:0",
+   "name": "Maruchan",
+   "brand": "Maruchan",
+   "aliases": [
+    "Soup Meal"
+   ],
+   "category": "noodles",
+   "position": {
+    "x": -2.6657043617803953,
+    "y": -0.95896204352829,
+    "z": 0.6262205834058866
+   },
+   "source": "vision",
+   "confidence": 0.39
+  },
+  {
+   "id": "catalog:campbells:0",
+   "name": "Campbell's",
+   "brand": "Campbell's",
+   "aliases": [
+    "Tomato Soup"
+   ],
+   "category": "soup",
+   "position": {
+    "x": -0.6318950792730234,
+    "y": -1.721775870703501,
+    "z": 0.3291995350696564
+   },
+   "source": "vision",
+   "confidence": 0.39
+  },
+  {
+   "id": "catalog:mrsfreshleys:0",
+   "name": "Mrs. Freshley's",
+   "brand": "Mrs. Freshley's",
+   "aliases": [
+    "Honey Bun",
+    "Jumbo Honey Bun"
+   ],
+   "category": "snack cakes",
+   "position": {
+    "x": -3.964085260118894,
+    "y": -0.22684731222886756,
+    "z": 1.4490671002601292
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:hostess:0",
+   "name": "Hostess",
+   "brand": "Hostess",
+   "aliases": [
+    "CupCakes",
+    "Coffee Cakes",
+    "Donettes",
+    "Jumbo Honey Bun",
+    "Honey Bun",
+    "Muffin Stix",
+    "Zingers",
+    "Mega Muffin"
+   ],
+   "category": "snack cakes",
+   "position": {
+    "x": -4.017408733712103,
+    "y": -0.22739294365763893,
+    "z": 0.8426775935740553
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:marinela:0",
+   "name": "Marinela",
+   "brand": "Marinela",
+   "aliases": [
+    "Barritas"
+   ],
+   "category": "cookies",
+   "position": {
+    "x": -3.7493055912801343,
+    "y": -0.4675819148899444,
+    "z": 1.1820722693748218
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:fruitypebbles:0",
+   "name": "Fruity Pebbles",
+   "brand": "Fruity Pebbles",
+   "aliases": [
+    "Cereal"
+   ],
+   "category": "cereal",
+   "position": {
+    "x": -3.560994167418704,
+    "y": -2.0286666243036438,
+    "z": 1.3428654935003987
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:honeybunchesofoats:0",
+   "name": "Honey Bunches of Oats",
+   "brand": "Honey Bunches of Oats",
+   "aliases": [
+    "Cereal"
+   ],
+   "category": "cereal",
+   "position": {
+    "x": -3.8288574130016744,
+    "y": -2.2617207943074136,
+    "z": 1.348740478983307
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:reesespuffs:0",
+   "name": "Reese's Puffs",
+   "brand": "Reese's Puffs",
+   "aliases": [
+    "Cereal"
+   ],
+   "category": "cereal",
+   "position": {
+    "x": -4.14043868841415,
+    "y": -2.54898769114065,
+    "z": 1.3623452610366242
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:cocoapuffs:0",
+   "name": "Cocoa Puffs",
+   "brand": "Cocoa Puffs",
+   "aliases": [
+    "Cereal"
+   ],
+   "category": "cereal",
+   "position": {
+    "x": -4.428092681981749,
+    "y": -2.8955853421474207,
+    "z": 1.3597398178690623
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:cheezit:0",
+   "name": "Cheez-It",
+   "brand": "Cheez-It",
+   "aliases": [
+    "Crackers"
+   ],
+   "category": "crackers",
+   "position": {
+    "x": -3.997432170393398,
+    "y": -2.3577533913788518,
+    "z": 1.0041602836886159
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:bimbo:0",
+   "name": "Bimbo",
+   "brand": "Bimbo",
+   "aliases": [
+    "Barritas",
+    "Polvorones"
+   ],
+   "category": "cookies",
+   "position": {
+    "x": -1.8009528525779854,
+    "y": -0.8089037533791719,
+    "z": 0.501804114531791
+   },
+   "source": "vision",
+   "confidence": 0.5
+  },
+  {
+   "id": "catalog:5hourenergy:0",
+   "name": "5-hour Energy",
+   "brand": "5-hour Energy",
+   "aliases": [
+    "Energy Drink"
+   ],
+   "category": "energy drink",
+   "position": {
+    "x": -1.4003504679917849,
+    "y": 3.394252985864439,
+    "z": 0.029574484931657707
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:dasani:0",
+   "name": "Dasani",
+   "brand": "Dasani",
+   "aliases": [
+    "water"
+   ],
+   "category": "water",
+   "position": {
+    "x": 3.7352785781464277,
+    "y": -1.471686981600516,
+    "z": 0.37351709424187934
+   },
+   "source": "vision",
+   "confidence": 0.55
+  },
+  {
+   "id": "catalog:popcorners:0",
+   "name": "Popcorners",
+   "brand": "Popcorners",
+   "aliases": [
+    "Sea Salt",
+    "White Cheddar",
+    "Spicy Queso"
+   ],
+   "category": "chips",
+   "position": {
+    "x": -0.2530222855090021,
+    "y": -1.142526399069979,
+    "z": 1.0355172805048787
+   },
+   "source": "vision",
+   "confidence": 0.55
+  }
+ ]
+}

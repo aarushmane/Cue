@@ -33,7 +33,8 @@ try {
     page.on("pageerror", (error) => errors.push(error.message));
     const response = await page.goto(url);
     assert.equal(response.status(), 200);
-    const embed = page.locator("iframe.scene-embed");
+    // Showcase embed when an SDK key is set, otherwise the walkable 3D simulation (or its 360° photo fallback).
+    const embed = page.locator("iframe.scene-embed, canvas[role=img], canvas[role=application]").first();
     const reset = page.getByRole("button", { name: "Reset view", exact: true });
     await expect(reset).toBeEnabled({ timeout: 30_000 }).catch(async (error) => {
       console.log("Load failure:", label, await page.locator("body").innerText(), errors);
@@ -41,7 +42,9 @@ try {
       throw error;
     });
     await expect(embed).toBeVisible();
-    assert.match(await embed.getAttribute("src"), /^https:\/\/my\.matterport\.com\/show\/\?m=[a-zA-Z0-9]{11}&/, "The scene is the Matterport Showcase embed.");
+    if (await embed.evaluate((el) => el.tagName === "IFRAME")) {
+      assert.match(await embed.getAttribute("src"), /^https:\/\/my\.matterport\.com\/show\/\?m=[a-zA-Z0-9]{11}&/, "The scene is the Matterport Showcase embed.");
+    }
 
     const bounds = await embed.boundingBox();
     assert.equal(Math.round(bounds.width), viewport.width);
