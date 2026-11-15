@@ -59,9 +59,9 @@ export function VoiceSettings({ preferences, onChange, onPreview }: {
         <TooltipTrigger asChild>
           <PopoverTrigger asChild><Button variant="ghost" size="icon" className="size-11" aria-label="Voice settings"><Settings2 className="size-4" aria-hidden="true" /></Button></PopoverTrigger>
         </TooltipTrigger>
-        <TooltipContent side="right">Settings</TooltipContent>
+        <TooltipContent>Settings</TooltipContent>
       </Tooltip>
-      <PopoverContent side="top" align="start" sideOffset={10} className="voice-settings w-[304px] max-w-[calc(100vw-24px)] gap-4 p-4" aria-label="Voice settings">
+      <PopoverContent side="bottom" align="start" sideOffset={10} className="voice-settings w-[304px] max-w-[calc(100vw-24px)] gap-4 p-4" aria-label="Voice settings">
         <div className="flex items-center justify-between">
           <h2 className="m-0 text-sm font-medium">Settings</h2>
           <Button variant="ghost" size="icon" className="size-7" aria-label="Close settings" onClick={() => { stopPreview(); setOpen(false); }}><X className="size-4" aria-hidden="true" /></Button>
@@ -92,7 +92,7 @@ export function VoiceSettings({ preferences, onChange, onPreview }: {
         </div>
         <Separator />
         {([
-          ["spokenResponses", "Voice responses"], ["wakeWord", "Require Hey Cue"], ["guidance", "Spoken directions"],
+          ["spokenResponses", "Voice responses"], ["guidance", "Spoken directions"],
         ] as const).map(([key, label]) => <div key={key} className="flex min-h-9 items-center justify-between gap-4">
           <label htmlFor={`voice-${key}`} className="text-sm">{label}</label>
           <Switch id={`voice-${key}`} checked={preferences[key]} onCheckedChange={(checked) => update({ [key]: checked })} />

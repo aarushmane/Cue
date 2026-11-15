@@ -393,7 +393,7 @@ export function SceneViewer({ modelId, name }: { modelId: string; name: string }
       {toolError && <p role="alert" className="absolute right-4 bottom-4 left-4 m-0 w-fit max-w-sm rounded-md bg-popover p-3 text-body text-destructive">{toolError}</p>}
           </section>
         </main>
-        <VoicePanel interruptRef={interruptVoice} activity={s.status === "loading" ? "Finding destination" : null} search={<>
+        <VoicePanel interruptRef={interruptVoice} modelId={modelId} onPickItem={setQuery} activity={s.status === "loading" ? "Finding destination" : null} search={<>
           <Logo />
           <form onSubmit={submit} className="destination-search" role="search" aria-label="Search the map">
             <Search className="search-leading size-4" aria-hidden="true" />
