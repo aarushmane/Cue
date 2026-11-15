@@ -216,9 +216,16 @@ export function ensureSimAssets(modelId: string, prefer: "auto" | "matterpak" = 
   return job;
 }
 
-export async function simMesh(modelId: string, prefer: "auto" | "matterpak" = "auto"): Promise<{ bin: Buffer; source: SimSource }> {
+/** Identifies the cached build, so browsers can revalidate instead of keeping an old mesh (e.g. before a new bake). */
+export const simTag = (meta: SimMeta) => `"${meta.source}-${meta.version ?? "pak"}-${meta.bytes}"`;
+
+export async function simMesh(modelId: string, prefer: "auto" | "matterpak" = "auto"): Promise<{ bin: Buffer; source: SimSource; tag: string }> {
   const meta = await ensureSimAssets(modelId, prefer);
-  return { bin: await readFile(path.join(cacheDir(modelId, meta.source), "mesh.bin")), source: meta.source };
+  return { bin: await readFile(path.join(cacheDir(modelId, meta.source), "mesh.bin")), source: meta.source, tag: simTag(meta) };
+}
+
+export async function simTagFor(modelId: string, source: SimSource): Promise<string> {
+  return simTag(await ensureSimAssets(modelId, source === "baked" ? "auto" : "matterpak"));
 }
 
 export async function simTexture(modelId: string, source: SimSource, name: string): Promise<Buffer | null> {

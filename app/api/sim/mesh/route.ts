@@ -13,11 +13,14 @@ export async function GET(request: Request) {
   if (!parsed.success) return Response.json({ error: "BAD_REQUEST" }, { status: 400 });
   try {
     await assertRegistered(parsed.data.model_id);
-    const { bin, source } = await simMesh(parsed.data.model_id, parsed.data.source).catch((error: unknown) => {
+    const { bin, source, tag } = await simMesh(parsed.data.model_id, parsed.data.source).catch((error: unknown) => {
       throw new HttpError(502, error instanceof Error ? error.message : "Could not load the scan's mesh.");
     });
     // x-sim-source: "baked" (Mann's photo-baked mesh, drawn as is) or "matterpak" (photos are projected live).
-    return new Response(new Uint8Array(bin), { headers: { "content-type": "application/octet-stream", "cache-control": "private, max-age=3600", "x-sim-source": source } });
+    // Revalidated on every load (ETag), so a new bake shows up without clearing the browser cache.
+    const headers = { "cache-control": "private, no-cache", etag: tag, "x-sim-source": source };
+    if (request.headers.get("if-none-match") === tag) return new Response(null, { status: 304, headers });
+    return new Response(new Uint8Array(bin), { headers: { ...headers, "content-type": "application/octet-stream" } });
   } catch (error) {
     return errorResponse(error);
   }

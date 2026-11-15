@@ -11,7 +11,7 @@ over the Matterport tour.
 | Aisle points | `lib/wayfinding/walkable.ts` | Walkable floor grid from the mesh (10 cm cells; blocked where anything sits 0.15–1.9 m above the floor) and extra standing points about every metre along the aisles, linked where the straight line keeps ≥ 0.24 m clearance. |
 | Find from detections | `locateFromDetections` | Detections → 3D rays from scan points → mesh hit (clustered), else triangulated (≥ 2 sweeps), else the first shelf box. |
 | Plan | `lib/wayfinding/plan.ts` `planRouteToItem` | Scan points + Matterport neighbour links; obstacle-checked extra edges; picks the best place to stand. |
-| Describe | same | Legs with turn text (fixed templates), floor arrows every 0.8 m, facing direction at the end. |
+| Describe | same, `lib/wayfinding/steps.ts` | Legs with turn text (fixed templates) in approximate steps (0.75 m each: "Turn right and walk about 4 steps."), floor arrows every 0.8 m, facing direction at the end. |
 | Draw | `lib/wayfinding/screen.ts`, `components/scene/RouteOverlay.tsx` | Projects the route with the Showcase SDK camera; edge arrow when the next stretch is off screen. |
 | Agent | `lib/agents/wayfinding/` | LangChain deepagents; tools wrap the steps above. The model never computes geometry. |
 
@@ -108,8 +108,10 @@ through them), `polyline`, `standPoint`, `facingDeg`, `legs[].text`, `arrows[]` 
   photo spot. Collisions use the walkable grid from the scan mesh (`GET /api/sim/walk`, `lib/sim/walk.ts`): you stop
   22 cm from shelves and slide along them, and can always step out of a tight spot.
 - **Route:** drawn in the scene as geometry on the floor (band, pulsing chevrons, stand ring), so shelves hide it; the
-  item pin shows through. Off-screen, an edge arrow points the way. Stopping after walking re-plans from where you
-  are (`start.position`); a failed re-plan keeps the last route. **Walk me there** follows the route to the stand point
+  item pin shows through. Off-screen, an edge arrow points the way. The band is redrawn from your feet every 5 cm you
+  move (`lib/sim/livePath.ts`: the walked part disappears; a connector joins you back if you step off, never through a
+  shelf), and the route is re-planned from where you are (`start.position`) every 0.25 s / 0.25 m while you walk and
+  once when you stop; a failed re-plan keeps the last route. **Walk me there** follows the route to the stand point
   and turns to the item.
 - **Fallbacks:** without WebGL2 or a MatterPak, the 360° photo viewer (`PanoViewer`), then the Showcase embed.
 - **Search order:** the search box asks `/api/wayfinding/route` first (catalogue, then photo search); the agent is only

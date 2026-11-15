@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { simTexture } from "@/lib/sim/matterpak";
+import { simTagFor, simTexture } from "@/lib/sim/matterpak";
 import { assertRegistered, errorResponse, HttpError } from "@/lib/wayfinding/request";
 
 // GET /api/sim/texture?model_id=…&name=… — one of the mesh's texture JPGs (names come from the mesh header).
@@ -14,10 +14,12 @@ export async function GET(request: Request) {
   if (!parsed.success) return Response.json({ error: "BAD_REQUEST" }, { status: 400 });
   try {
     await assertRegistered(parsed.data.model_id);
+    const tag = (await simTagFor(parsed.data.model_id, parsed.data.source)).replace(/"$/, `-${parsed.data.name}"`);
+    if (request.headers.get("if-none-match") === tag) return new Response(null, { status: 304, headers: { etag: tag, "cache-control": "private, no-cache" } });
     const image = await simTexture(parsed.data.model_id, parsed.data.source, parsed.data.name);
     if (!image) throw new HttpError(404, "No such texture.");
     const type = parsed.data.name.toLowerCase().endsWith(".png") ? "image/png" : "image/jpeg";
-    return new Response(new Uint8Array(image), { headers: { "content-type": type, "cache-control": "private, max-age=86400", "x-content-type-options": "nosniff" } });
+    return new Response(new Uint8Array(image), { headers: { "content-type": type, "cache-control": "private, no-cache", etag: tag, "x-content-type-options": "nosniff" } });
   } catch (error) {
     return errorResponse(error);
   }

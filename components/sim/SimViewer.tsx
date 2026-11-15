@@ -3,8 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import { LoaderCircle } from "lucide-react";
 import * as THREE from "three";
+import { livePath } from "@/lib/sim/livePath";
 import { decodeGrid, eyeAt, nearestOpen, walk, type SimGrid } from "@/lib/sim/walk";
-import { chevronsAlong, floorChevron, floorPath, ribbon } from "@/lib/wayfinding/pano";
+import { chevronsAlong, floorChevron, ribbon } from "@/lib/wayfinding/pano";
 import { edgeIndicator, lookAhead, progressAlong, pointAlong } from "@/lib/wayfinding/screen";
 import { FACES } from "@/lib/wayfinding/skybox";
 import { FACE_LOOKUP } from "@/lib/wayfinding/skyboxGlsl";
@@ -133,9 +134,8 @@ async function panoFaces(modelId: string, pano: Pano, res: number): Promise<THRE
 }
 
 // ── Route drawn in the scene, lying on the floor ──
-function routeGroup(plan: OkPlan, color: THREE.Color, ink: THREE.Color): { group: THREE.Group; chevrons: THREE.MeshBasicMaterial[] } {
+function routeGroup(plan: OkPlan, path: Vec3[], color: THREE.Color, ink: THREE.Color): { group: THREE.Group; chevrons: THREE.MeshBasicMaterial[] } {
   const group = new THREE.Group();
-  const path = floorPath(plan.polyline, plan.item.position);
   const outline = ribbon(path, 0.22, 0.015);
   if (outline.length >= 4) {
     const k = outline.length / 2;
@@ -241,7 +241,8 @@ export function SimViewer({ modelId, plan, guideKey, onPosition, onUnavailable }
       plan: null as OkPlan | null,
       guide: null as null | { path: Vec3[]; atM: number; endYaw: number | null },
       turnTo: null as null | { yaw: number; pitch: number },
-      moved: false, lastReport: null as { x: number; y: number } | null, stillSince: 0,
+      moved: false, lastReport: null as { x: number; y: number } | null, lastReportAt: 0, stillSince: 0,
+      drawnAt: null as { x: number; y: number } | null,
       markers: [] as { mesh: THREE.Mesh; pano: Pano }[],
       cubes: [] as THREE.WebGLCubeRenderTarget[],
       materials: null as null | { photo: THREE.Material[]; basic: THREE.Material[] },
@@ -256,13 +257,20 @@ export function SimViewer({ modelId, plan, guideKey, onPosition, onUnavailable }
 
     function onUnavailableOnce(reason: string) { if (live) latest.current.onUnavailable(reason); }
 
-    const setPlan = (p: OkPlan | null) => {
+    // (Re)draw the route from where the visitor stands: called when a plan arrives and as they move.
+    const drawRoute = () => {
       if (state.route) { scene.remove(state.route.group); disposeGroup(state.route.group); state.route = null; }
+      const p = state.plan;
+      if (!p) return;
+      state.route = routeGroup(p, livePath(p.polyline, p.item.position, state.floor, state.grid), color, ink);
+      scene.add(state.route.group);
+      state.drawnAt = { ...state.floor };
+    };
+    const setPlan = (p: OkPlan | null) => {
       const isNew = p && state.plan?.item.id !== p.item.id;
       state.plan = p;
+      drawRoute();
       if (!p) return;
-      state.route = routeGroup(p, color, ink);
-      scene.add(state.route.group);
       // A new item: turn toward the way to go (re-plans while walking don't turn the visitor).
       if (isNew && state.grid) {
         if (p.status === "ALREADY_THERE" || p.polyline.length < 2) faceTarget(p.item.position);
@@ -522,15 +530,23 @@ export function SimViewer({ modelId, plan, guideKey, onPosition, onUnavailable }
       const stepped = Math.hypot(state.floor.x - before.x, state.floor.y - before.y) > 1e-4;
       if (stepped) { state.moved = true; state.stillSince = performance.now(); }
 
-      // Tell the page where the visitor is once they stop (it re-plans the route from there).
+      // The drawn route follows the visitor every few centimetres: it starts at their feet.
       const now = performance.now();
-      if (state.moved && !stepped && now - state.stillSince > 350) {
+      if (state.plan && (!state.drawnAt || Math.hypot(state.floor.x - state.drawnAt.x, state.floor.y - state.drawnAt.y) > 0.05)) drawRoute();
+
+      // Tell the page where the visitor is, so it re-plans from there: while walking (every 0.25 s after 0.25 m — a
+      // re-plan takes the server ~15 ms), and once more when they stop.
+      const last = state.lastReport;
+      const since = last ? Math.hypot(state.floor.x - last.x, state.floor.y - last.y) : Infinity;
+      const report = () => {
+        state.lastReport = { ...state.floor };
+        state.lastReportAt = now;
+        latest.current.onPosition({ ...state.floor, z: g.floorZ });
+      };
+      if (stepped && since > 0.25 && now - state.lastReportAt > 250) report();
+      else if (state.moved && !stepped && now - state.stillSince > 200) {
         state.moved = false;
-        const last = state.lastReport;
-        if (!last || Math.hypot(state.floor.x - last.x, state.floor.y - last.y) > 0.6) {
-          state.lastReport = { ...state.floor };
-          latest.current.onPosition({ ...state.floor, z: g.floorZ });
-        }
+        if (since > 0.1) report();
       }
 
       // Camera.

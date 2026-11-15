@@ -64,21 +64,33 @@ export function useWayfinding(modelId: string, context: () => WayfindingContext)
    * The visitor moved: re-plan to the same item from the new start, without the loading state (the old route stays
    * on screen until the new one arrives). Sends the item itself, so photo-found items work too.
    */
-  const reroute = useCallback(async (start: WayfindingStart) => {
+  // One re-plan in flight at a time. Moving again meanwhile just records the latest position, which is sent as soon
+  // as the current answer is in. (Cancelling the in-flight request instead starved slow devices: each new position
+  // cancelled the previous answer before it could be shown.)
+  const queued = useRef<WayfindingStart | null>(null);
+  const busy = useRef(false);
+  const reroute = useCallback(async function next(start: WayfindingStart): Promise<void> {
+    if (busy.current) { queued.current = start; return; }
     const current = latest.current;
     if (current.status !== "ready" || !current.item) return;
     const item = current.item;
-    rerouting.current?.abort();
+    busy.current = true;
     const abort = new AbortController();
-    rerouting.current = abort;
+    rerouting.current = abort; // only cleared routes cancel it
     try {
       const { response, data } = await post("/api/wayfinding/route", { model_id: modelId, ...context(), start, item_id: item.id, items: [item] }, abort.signal);
-      const next = data.plan as RoutePlan | undefined;
+      const plan = data.plan as RoutePlan | undefined;
       // Only take a usable route; if re-planning from here fails, keep showing the last one.
-      if (abort.signal.aborted || !response.ok || !next || (next.status !== "OK" && next.status !== "ALREADY_THERE")) return;
-      setState((prev) => (prev.status === "ready" && prev.item?.id === item.id ? { ...prev, plan: next } : prev));
+      if (!abort.signal.aborted && response.ok && plan && (plan.status === "OK" || plan.status === "ALREADY_THERE")) {
+        setState((prev) => (prev.status === "ready" && prev.item?.id === item.id ? { ...prev, plan } : prev));
+      }
     } catch {
       // Keep the previous route; the next move tries again.
+    } finally {
+      busy.current = false;
+      const waiting = queued.current;
+      queued.current = null;
+      if (waiting && !abort.signal.aborted) void next(waiting);
     }
   }, [modelId, context]);
 
@@ -87,6 +99,6 @@ export function useWayfinding(modelId: string, context: () => WayfindingContext)
     reroute,
     find: (query: string) => run(query, { query }, true),
     choose: (item: SceneItem) => run(item.name, { item_id: item.id }, false),
-    clear: () => { inflight.current?.abort(); rerouting.current?.abort(); setState({ status: "idle" }); },
+    clear: () => { inflight.current?.abort(); rerouting.current?.abort(); queued.current = null; setState({ status: "idle" }); },
   };
 }

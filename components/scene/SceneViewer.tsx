@@ -12,6 +12,7 @@ import { RouteMap } from "./RouteMap";
 import { PanoViewer, type PanoSweep } from "./PanoViewer";
 import { SimViewer } from "@/components/sim/SimViewer";
 import type { Vec3 } from "@/lib/wayfinding/types";
+import { aboutSteps } from "@/lib/wayfinding/steps";
 import { RouteOverlay } from "./RouteOverlay";
 import { connectShowcase, SDK_KEY, stepAlong, toApi, watchSweeps, type ClientWaypoint, type Pose } from "./showcase";
 import { useWayfinding } from "./useWayfinding";
@@ -251,7 +252,7 @@ export function SceneViewer({ modelId, name }: { modelId: string; name: string }
                 <ToolButton label="Clear route" onClick={() => wayfinding.clear()}><X aria-hidden="true" /></ToolButton>
               </div>
             </div>
-            {folded && plan && <p className="m-0 font-mono text-label text-muted-foreground">{plan.totalDistanceM} m · {plan.waypointIds.length} stops</p>}
+            {folded && plan && <p className="m-0 font-mono text-label text-muted-foreground">{plan.status === "ALREADY_THERE" ? "You're there" : aboutSteps(plan.totalDistanceM)}</p>}
             {!folded && s.status === "choose" && (
               <ul className="m-0 mt-2 flex list-none flex-col gap-1 p-0">
                 {s.options.map((option) => (
@@ -267,7 +268,7 @@ export function SceneViewer({ modelId, name }: { modelId: string; name: string }
                 {s.plan && "reason" in s.plan && <p className="m-0 mt-1 text-body text-muted-foreground">{s.plan.reason}</p>}
                 {plan && (
                   <>
-                    <p className="m-0 mt-1 font-mono text-label text-muted-foreground">{plan.totalDistanceM} m · {plan.waypointIds.length} stops</p>
+                    <p className="m-0 mt-1 font-mono text-label text-muted-foreground">{plan.status === "ALREADY_THERE" ? "You're there" : aboutSteps(plan.totalDistanceM)}</p>
                     <ol className="m-0 mt-2 flex flex-col gap-1 pl-5 text-body">
                       {plan.legs.map((leg) => <li key={leg.index}>{leg.text}</li>)}
                     </ol>
