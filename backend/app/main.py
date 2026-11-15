@@ -5,6 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.agent.routes import router as agent_router
 from app.config import Settings
 from app.database import DatabaseUnavailable, ReadDatabase, get_database
 from app.drawings import router as drawing_router
@@ -41,11 +42,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         title="StoreGuide API",
         version="0.1.0",
         description=(
-            "Public database reads and scene drawing placeholders. "
-            "No authentication or agent endpoints."
+            "Public database reads, scene drawing placeholders, and a basic scene agent "
+            "(/api/agent). No authentication."
         ),
         lifespan=lifespan,
     )
+    app.state.settings = settings
+    app.state.scene_agent = None  # built on first /api/agent/scene call
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
@@ -72,6 +75,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(router)
     app.include_router(drawing_router)
+    app.include_router(agent_router)
     return app
 
 

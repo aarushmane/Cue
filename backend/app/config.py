@@ -25,7 +25,13 @@ class Settings(BaseSettings):
         default="http://localhost:3000,http://127.0.0.1:3000",
         validation_alias="BACKEND_CORS_ORIGINS",
     )
+    agent_model: str = Field(default="anthropic:claude-opus-5-5", validation_alias="AGENT_MODEL")
+    anthropic_api_key: SecretStr = Field(default=SecretStr(""), validation_alias="ANTHROPIC_API_KEY")
 
     @property
     def database_configured(self) -> bool:
         return bool(self.supabase_url.strip() and self.supabase_anon_key.get_secret_value().strip())
+
+    @property
+    def agent_configured(self) -> bool:
+        return bool(self.anthropic_api_key.get_secret_value().strip())

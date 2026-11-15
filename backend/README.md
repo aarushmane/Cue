@@ -97,6 +97,25 @@ property lookup, and the existing token-protected property write.
 
 Both routes are placeholders with TODOs for future implementation.
 
+## Scene agent (basic)
+
+Everything agent-related is in `app/agent/`, and all its routes are under `/api/agent`. It's a
+LangChain Deep Agent that reads a text description of what the view shows, reasons about it,
+and decides what to do through tools: `speak`, `turn`, `move_forward`, `stop`. The tools only
+record decisions for now. Nothing moves or speaks yet.
+
+Set `ANTHROPIC_API_KEY` in the repo-root `.env` (git-ignored). Optionally set `AGENT_MODEL`
+(default `anthropic:claude-opus-5-5`).
+
+- GET `/api/agent/status`: `{configured, model}`. The key is never returned.
+- POST `/api/agent/scene`: body `{"description": "...", "goal": "..."}` (goal optional).
+  Returns `{"actions": [...], "reply": "..."}`. Returns 503 if no key is set, and 502 on provider errors.
+
+```bash
+curl -X POST localhost:8000/api/agent/scene -H 'content-type: application/json' \
+  -d '{"description": "Aisle with cereal boxes on the left; a cart blocks the path ahead.", "goal": "Find oat milk"}'
+```
+
 ## Development
 
 Run from `backend/`:
