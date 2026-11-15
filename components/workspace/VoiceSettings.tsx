@@ -92,7 +92,7 @@ export function VoiceSettings({ preferences, onChange, onPreview }: {
         </div>
         <Separator />
         {([
-          ["spokenResponses", "Voice responses"], ["wakeWord", "Hey Cue wake word"], ["guidance", "Spoken directions"],
+          ["spokenResponses", "Voice responses"], ["wakeWord", "Require Hey Cue"], ["guidance", "Spoken directions"],
         ] as const).map(([key, label]) => <div key={key} className="flex min-h-9 items-center justify-between gap-4">
           <label htmlFor={`voice-${key}`} className="text-sm">{label}</label>
           <Switch id={`voice-${key}`} checked={preferences[key]} onCheckedChange={(checked) => update({ [key]: checked })} />

@@ -9,6 +9,7 @@ import { wakeCommand, type VoicePreferences } from "@/lib/voice/preferences";
 import type { GuidanceCue } from "@/lib/voice/guidance";
 import { voiceSocket } from "@/lib/voice/socket";
 import { normalize } from "@/lib/search/matchProducts";
+import { clarificationAnswer, type VoiceClarification } from "@/lib/voice/clarification";
 
 export type VoiceBridge = {
   context: () => Record<string, unknown>;
@@ -36,15 +37,18 @@ export function useVoice(bridge: VoiceBridge, preferences: VoicePreferences) {
   const options = useRef(preferences);
   useEffect(() => { options.current = preferences; }, [preferences]);
   const activated = useRef(false);
+  const activationTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const activationDeadline = useRef(0);
+  const clarification = useRef<VoiceClarification | null>(null);
   const utterance = useRef({ text: "", timer: undefined as ReturnType<typeof setTimeout> | undefined });
-  const lastSpeech = useRef({ text: "", at: 0, playing: false });
+  const lastSpeech = useRef({ text: "", at: 0, playing: false, interrupted: false });
   const wasMoving = useRef(false);
   const guidanceSpoken = useRef({ key: "", at: 0 });
   const session = useRef<Session | null>(null);
   const turn = useRef(new VoiceTurn());
   const busy = useRef(false);
   const history = useRef<VoiceMessage[]>([]);
-  const speechIntent = useRef<"pending" | "accepted" | "blocked">("pending");
+  const speechIntent = useRef<"pending" | "accepted" | "blocked" | "protected">("pending");
   const [phase, setPhase] = useState<Phase>("off");
   const [listeningOpen, setListeningOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -55,9 +59,34 @@ export function useVoice(bridge: VoiceBridge, preferences: VoicePreferences) {
   const [progress, setProgress] = useState<Extract<VoiceEvent, { type: "progress" }> | null>(null);
   const [navigation, setNavigation] = useState<"idle" | "guiding" | "arrived">("idle");
 
-  const interrupt = useCallback(() => {
+  const closeListening = useCallback(() => {
+    clearTimeout(activationTimer.current);
+    activationDeadline.current = 0;
+    clarification.current = null;
+    activated.current = !options.current.wakeWord;
+    setListeningOpen(activated.current);
+  }, []);
+
+  const openClarification = useCallback((question: VoiceClarification) => {
+    clarification.current = question;
+    activated.current = true;
+    activationDeadline.current = Date.now() + 15_000;
+    setListeningOpen(true);
+    clearTimeout(activationTimer.current);
+    activationTimer.current = setTimeout(closeListening, 10_000);
+  }, [closeListening]);
+
+  useEffect(() => {
     clearTimeout(utterance.current.timer);
     utterance.current.text = "";
+    speechIntent.current = "pending";
+    closeListening();
+  }, [preferences.wakeWord, closeListening]);
+
+  const cancelWork = useCallback(() => {
+    clearTimeout(utterance.current.timer);
+    utterance.current.text = "";
+    lastSpeech.current.interrupted = true;
     turn.current.cancel();
     busy.current = false;
     wasMoving.current = false;
@@ -69,6 +98,11 @@ export function useVoice(bridge: VoiceBridge, preferences: VoicePreferences) {
     setPhase(session.current?.connected ? "listening" : session.current ? "connecting" : "off");
   }, []);
 
+  const interrupt = useCallback(() => {
+    closeListening();
+    cancelWork();
+  }, [closeListening, cancelWork]);
+
   const dispose = useCallback(() => {
     turn.current.cancel();
     busy.current = false;
@@ -76,9 +110,14 @@ export function useVoice(bridge: VoiceBridge, preferences: VoicePreferences) {
     const old = session.current;
     session.current = null;
     activated.current = false;
+    clearTimeout(activationTimer.current);
+    activationDeadline.current = 0;
+    clarification.current = null;
     clearTimeout(utterance.current.timer);
     utterance.current.text = "";
     speechIntent.current = "pending";
+    history.current = [];
+    lastSpeech.current = { text: "", at: 0, playing: false, interrupted: false };
     wasMoving.current = false;
     old?.abort.abort();
     clearTimeout(old?.timeout);
@@ -94,7 +133,7 @@ export function useVoice(bridge: VoiceBridge, preferences: VoicePreferences) {
     guidanceSpoken.current.at = Date.now();
     setInterrupted(false);
     setPhase("speaking");
-    const spoken = { text, at: Date.now(), playing: true };
+    const spoken = { text, at: Date.now(), playing: true, interrupted: false };
     lastSpeech.current = spoken;
     try { await playSpeech(text, current.capture.context, signal, (analyser) => {
       if (!signal.aborted && session.current === current) setOutput(analyser);
@@ -102,10 +141,10 @@ export function useVoice(bridge: VoiceBridge, preferences: VoicePreferences) {
     finally { spoken.playing = false; spoken.at = Date.now(); }
   }, []);
 
-  const echo = useCallback((text: string) => {
+  const echo = useCallback((text: string, includeDelayed = false) => {
     if (wakeCommand(text).wake) return false;
     const spoken = lastSpeech.current;
-    if (!spoken.playing && Date.now() - spoken.at > 2000) return false;
+    if (!includeDelayed && !spoken.playing && Date.now() - spoken.at > 1000) return false;
     const words = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(Boolean);
     const input = words(text), output = words(spoken.text);
     return input.length > 0 && input.filter((word) => output.includes(word)).length / input.length >= 0.8;
@@ -113,16 +152,38 @@ export function useVoice(bridge: VoiceBridge, preferences: VoicePreferences) {
 
   const accept = useCallback((text: string) => {
     const wake = wakeCommand(text);
-    if (wake.wake) { activated.current = true; setListeningOpen(true); }
     if (isStopCommand(wake.command)) return wake.command;
-    return !options.current.wakeWord || activated.current ? wake.command : null;
-  }, []);
+    if (!wake.wake && clarification.current && clarificationAnswer(wake.command, clarification.current) === null) return null;
+    if (wake.wake) {
+      clarification.current = null;
+      if (!activated.current) activationDeadline.current = Date.now() + 15_000;
+      activated.current = true;
+      setListeningOpen(true);
+      setError(null);
+    }
+    if (options.current.wakeWord && !activated.current) return null;
+    if (options.current.wakeWord) {
+      // One wake phrase opens one request, with time for pauses between words.
+      // An unfinished request must not leave the microphone accepting room speech.
+      clearTimeout(activationTimer.current);
+      activationTimer.current = setTimeout(() => {
+        const wasQuestion = Boolean(clarification.current);
+        closeListening();
+        clearTimeout(utterance.current.timer);
+        utterance.current.text = "";
+        speechIntent.current = "pending";
+        if (!wasQuestion) setError("I didn't catch a complete request. Say Hey Cue and try again.");
+      }, Math.max(0, Math.min(8000, activationDeadline.current - Date.now())));
+    }
+    return wake.command;
+  }, [closeListening]);
 
   const submit = useCallback(async (raw: string, approved = false) => {
     const current = session.current;
     const text = approved ? wakeCommand(raw).command : accept(raw);
     if (!current?.connected || text === null) return;
     if (!text) { interrupt(); return; }
+    const answering = !wakeCommand(raw).wake ? clarification.current : null;
     interrupt();
     setInterrupted(false);
     setTranscript(text);
@@ -131,7 +192,7 @@ export function useVoice(bridge: VoiceBridge, preferences: VoicePreferences) {
     busy.current = true;
     try {
       if (isStopCommand(text)) {
-        // No model latency on stop. The local VAD has already stopped motion/speech.
+        // No model latency on stop. The accepted transcript already stopped motion/speech.
         setReply("Stopped.");
         await say("Stopped.", signal, current);
         if (!signal.aborted) setInterrupted(true);
@@ -140,7 +201,7 @@ export function useVoice(bridge: VoiceBridge, preferences: VoicePreferences) {
       setPhase("thinking");
       setProgress({ type: "progress", stage: "loading", label: "Loading scene" });
       const result = await voiceSocket.request<VoiceResult>("turn", {
-        ...latest.current.context(), query: text.slice(0, 300), history: history.current.slice(-8),
+        ...latest.current.context(), query: text.slice(0, 300), history: history.current.slice(-8), ...(answering ? { clarification: answering } : {}),
       }, signal, (event) => {
         if (signal.aborted || session.current !== current) return;
         if (event.type === "progress") setProgress(event);
@@ -158,6 +219,7 @@ export function useVoice(bridge: VoiceBridge, preferences: VoicePreferences) {
       history.current = [...history.current, { role: "user", content: text.slice(0, 300) }, { role: "assistant", content: result.reply }].slice(-8) as VoiceMessage[];
       await say(result.reply, signal, current);
       signal.throwIfAborted();
+      if (result.clarification) openClarification(result.clarification);
       if (movement.length) {
         guidanceSpoken.current.key = "";
         if (result.plan?.status === "ALREADY_THERE") {
@@ -177,7 +239,7 @@ export function useVoice(bridge: VoiceBridge, preferences: VoicePreferences) {
     } finally {
       if (!signal.aborted && session.current === current) { busy.current = false; setPhase("listening"); setOutput(null); setProgress(null); }
     }
-  }, [interrupt, say, accept]);
+  }, [interrupt, say, accept, openClarification]);
 
   const start = useCallback(async () => {
     stop();
@@ -195,8 +257,8 @@ export function useVoice(bridge: VoiceBridge, preferences: VoicePreferences) {
       await capture.context.audioWorklet.addModule("/audio/voice-input.js");
       current.abort.signal.throwIfAborted();
       const connection = Scribe.connect({ token: data.token, modelId: "scribe_v2_realtime", audioFormat: AudioFormat.PCM_16000,
-        sampleRate: 16000, commitStrategy: CommitStrategy.VAD, vadSilenceThresholdSecs: 0.6,
-        keyterms: ["Hey Cue", "Cue"] });
+        sampleRate: 16000, commitStrategy: CommitStrategy.VAD, vadSilenceThresholdSecs: 0.9,
+        filterBackgroundAudio: true, keyterms: ["Hey Cue", "Cue"] });
       current.connection = connection;
       const fail = (message: string) => {
         if (session.current !== current) return;
@@ -211,17 +273,8 @@ export function useVoice(bridge: VoiceBridge, preferences: VoicePreferences) {
         clearTimeout(current.timeout);
         const input = new AudioWorkletNode(capture.context, "voice-input");
         current.input = input;
-        let loud = 0;
-        let latched = false;
-        input.port.onmessage = ({ data }: MessageEvent<{ pcm: ArrayBuffer; rms: number }>) => {
+        input.port.onmessage = ({ data }: MessageEvent<{ pcm: ArrayBuffer }>) => {
           if (session.current !== current) return;
-          // Require ~200 ms above the gate. Partial transcripts also interrupt, catching quieter speakers.
-          loud = data.rms > 0.025 ? loud + 1 : 0;
-          if (!loud) latched = false;
-          if (loud >= 2 && !latched) {
-            latched = true;
-            if (activated.current && !lastSpeech.current.playing && (busy.current || latest.current.moving())) interrupt();
-          }
           try {
             const bytes = new Uint8Array(data.pcm);
             connection.send({ audioBase64: btoa(String.fromCharCode(...bytes)), sampleRate: 16000 });
@@ -244,6 +297,7 @@ export function useVoice(bridge: VoiceBridge, preferences: VoicePreferences) {
       // opening briefly, within this connection, rather than joining background speech.
       let wakePrefixUntil = 0;
       let completingWake = false;
+      const protectingOutput = () => !lastSpeech.current.interrupted && (lastSpeech.current.playing || Date.now() - lastSpeech.current.at < 1000);
       const withWakePrefix = (text: string) => {
         const combined = `Hey ${text}`;
         if ((completingWake || Date.now() < wakePrefixUntil) && !wakeCommand(text).wake && wakeCommand(combined).wake) {
@@ -255,12 +309,21 @@ export function useVoice(bridge: VoiceBridge, preferences: VoicePreferences) {
       connection.on(RealtimeEvents.PARTIAL_TRANSCRIPT, ({ text: raw }) => {
         if (session.current !== current || !raw.trim()) return;
         const text = withWakePrefix(raw);
-        clearTimeout(utterance.current.timer); // A pause is not a completed request if speech resumes.
-        if (echo(text)) { speechIntent.current = "blocked"; return; }
+        const wake = wakeCommand(text);
+        const answering = !busy.current && clarification.current && clarificationAnswer(wake.command, clarification.current) !== null;
+        const explicit = wake.wake || isStopCommand(wake.command) || answering;
+        // Protect reasoning as well as playback. A nearby conversation must not
+        // silently cancel a search, even when wake-word prompting is disabled.
+        if (!explicit && (busy.current || protectingOutput() || speechIntent.current === "protected")) {
+          speechIntent.current = "protected";
+          return;
+        }
+        if (!answering && echo(text)) { speechIntent.current = "blocked"; return; }
         const command = accept(text);
-        if (command === null) { speechIntent.current = "blocked"; setTranscript(raw); return; }
+        if (command === null) { speechIntent.current = "blocked"; return; }
+        clearTimeout(utterance.current.timer); // Accepted speech resumes; ignored echo must not strand a queued request.
         speechIntent.current = "accepted";
-        if (busy.current || latest.current.moving() || isStopCommand(command)) interrupt();
+        if (busy.current || latest.current.moving() || isStopCommand(command)) cancelWork();
         if (command && !isStopCommand(command)) setInterrupted(false);
         setTranscript(joinSpeech(utterance.current.text, command));
       });
@@ -269,19 +332,21 @@ export function useVoice(bridge: VoiceBridge, preferences: VoicePreferences) {
         const text = withWakePrefix(raw);
         completingWake = false;
         const wake = wakeCommand(text);
-        const explicit = wake.wake || isStopCommand(wake.command);
+        const answering = !busy.current && clarification.current && clarificationAnswer(wake.command, clarification.current) !== null;
+        const explicit = wake.wake || isStopCommand(wake.command) || answering;
         const intent = speechIntent.current;
         speechIntent.current = "pending";
-        // Don't accept a delayed echo just because output finished before its final transcript.
-        if (echo(text)) return;
+        // Preserve a split wake phrase even when its opening is heard over output.
         wakePrefixUntil = /^[\s\p{P}]*hey[\s\p{P}]*$/iu.test(raw) ? Date.now() + 2500 : 0;
-        if (intent === "blocked" && !explicit) {
-          if (options.current.wakeWord && !activated.current) setTranscript(raw);
-          return;
-        }
+        // Keep ignoring the whole segment even if its final arrives after work finishes.
+        if (!explicit && (intent === "protected" || busy.current || protectingOutput())) return;
+        // Don't accept a delayed echo just because output finished before its final transcript.
+        if (!answering && (echo(text) || (intent === "blocked" && !explicit && echo(text, true)))) return;
+        // Re-evaluate the final words: an early partial may have looked like echo
+        // or lacked the wake phrase before Scribe corrected it.
         const command = accept(text);
-        if (command === null) { setTranscript(raw); return; }
-        if (!command) { interrupt(); setTranscript(raw); return; }
+        if (command === null) return;
+        if (!command) { cancelWork(); setTranscript(raw); return; }
         clearTimeout(utterance.current.timer);
         if (isStopCommand(command)) { utterance.current.text = ""; void submit(command, true); return; }
         utterance.current.text = joinSpeech(utterance.current.text, command);
@@ -291,10 +356,10 @@ export function useVoice(bridge: VoiceBridge, preferences: VoicePreferences) {
         utterance.current.timer = setTimeout(() => {
           const complete = utterance.current.text;
           // Keep incomplete openings across longer pauses too ("can you find me ...").
-          if (!normalize(complete) || /\b(?:to|for|and|the|a|an|some|me)[,.!?\s]*$/i.test(complete)) return;
+          if (!normalize(complete) || /[-–—…]\s*$/.test(complete) || /\b(?:to|for|and|the|a|an|some|me)[\p{P}\s]*$/iu.test(complete)) return;
           utterance.current.text = "";
           if (session.current === current && complete) void submit(complete, true);
-        }, 1100);
+        }, 1400);
       });
       connection.on(RealtimeEvents.ERROR, () => fail("ElevenLabs transcription failed. Check your key, speech-to-text permissions and quota, then reconnect."));
       connection.on(RealtimeEvents.CLOSE, () => fail("Voice disconnected. Enable the microphone to reconnect."));
@@ -302,7 +367,7 @@ export function useVoice(bridge: VoiceBridge, preferences: VoicePreferences) {
       if (session.current !== current) return;
       stop(); setError(error instanceof Error ? error.message : "Could not start voice.");
     }
-  }, [stop, dispose, startMicrophone, interrupt, submit, accept, say, echo]);
+  }, [stop, dispose, startMicrophone, cancelWork, submit, accept, say, echo]);
 
   const replay = useCallback(async () => {
     const current = session.current;
@@ -319,18 +384,18 @@ export function useVoice(bridge: VoiceBridge, preferences: VoicePreferences) {
     const timer = setInterval(async () => {
       const current = session.current;
       if (!current?.connected || !options.current.guidance || !options.current.spokenResponses) return;
+      // A pause between transcription segments must not let guidance start talking
+      // over the visitor, or clear the already collected part of their request.
+      if (busy.current || clarification.current || utterance.current.text || speechIntent.current === "accepted") return;
       const moving = latest.current.moving();
       const justStopped = wasMoving.current && !moving;
       wasMoving.current = moving;
       const cue = latest.current.guidance();
       if (cue?.arrived && moving) return; // Wait for the final facing motion before announcing arrival.
       if (cue?.arrived && !moving && justStopped && cue.key !== guidanceSpoken.current.key) {
-        turn.current.cancel(); // Arrival takes precedence over a stale "continue ahead" response.
-        busy.current = false;
-        // The renderer has finished walking AND facing the product. Preserve that orientation.
         wasMoving.current = false;
         setNavigation("arrived");
-      } else if (busy.current || (!moving && !justStopped)) return;
+      } else if (!moving && !justStopped) return;
       if (!cue || (!moving && !cue.arrived) || cue.key === guidanceSpoken.current.key) return;
       if (!cue.arrived && Date.now() - guidanceSpoken.current.at < 4000) return;
       const signal = turn.current.begin();
@@ -357,16 +422,15 @@ export function useVoice(bridge: VoiceBridge, preferences: VoicePreferences) {
   useEffect(() => {
     const hide = () => { if (document.hidden) stop(); };
     const escape = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      const typing = target?.isContentEditable || target?.closest("input, textarea, select");
-      if (event.key === "Escape" || (!typing && ["KeyW", "KeyA", "KeyS", "KeyD", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.code))) interrupt();
+      if (event.key === "Escape") interrupt();
     };
     const takeOver = (event: PointerEvent) => {
-      if ((event.target as HTMLElement | null)?.closest(".scene canvas")) interrupt();
+      // Manual scene controls stop autonomous movement, while spoken guidance
+      // continues following the visitor's position instead of being cut off.
+      if ((event.target as HTMLElement | null)?.closest(".scene canvas")) latest.current.stop();
     };
     document.addEventListener("visibilitychange", hide);
     window.addEventListener("pagehide", stop);
-    // Capture runs before the viewer's key handler so its new manual movement is not cleared.
     window.addEventListener("keydown", escape, true);
     window.addEventListener("pointerdown", takeOver, true);
     return () => {

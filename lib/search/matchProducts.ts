@@ -5,6 +5,9 @@ const FILLER = [
   "where can i find", "where do i find", "where is", "where are", "can you find", "help me find", "i am looking for",
   "i'm looking for", "im looking for", "looking for", "i need", "i want", "find me", "find", "get me", "take me to",
   "can you find me", "could you find me", "can you show me", "show me",
+  "can you help me find", "could you help me find", "help me get", "help me locate",
+  "where can i get", "where do you keep", "where is the", "wheres", "do you have", "have you got",
+  "i would like to find", "i would like", "id like", "could you get me", "can you get me", "locate", "search for",
   "guide me to", "walk me to", "navigate me to", "bring me to", "lead me to", "go to", "head to",
   "can you take me to", "can you guide me to", "could you take me to",
   "some", "a", "an", "the", "please",
@@ -14,6 +17,7 @@ export function normalize(text: string): string {
   let s = ` ${text.toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "")} `;
   s = s.replace(/\ba[\s.-]*(?:1|one)\b/g, "a1");
   s = s.replace(/[’']/g, "").replace(/[^a-z0-9%]+/g, " ");
+  s = s.replace(/^\s*(?:(?:can|could|would|will) you\s+)(?:please\s+)?/, " ");
   // Longest phrases first so "where can i find" wins over "find".
   for (const f of FILLER) {
     s = s.replaceAll(` ${f} `, " ");
@@ -48,7 +52,7 @@ export function scoreProduct(query: string, p: Product): number {
   const qJoined = q.join(" ");
   const phrases = [p.name, ...p.aliases].map((s) => tokens(s));
 
-  if (phrases.some((t) => t.join(" ") === qJoined)) return 100;
+  if (phrases.some((t) => t.join(" ") === qJoined || t.join("") === q.join(""))) return 100;
   if (phrases.some((t) => q.every((w) => t.includes(w)))) return 80;
 
   const all = new Set([p.name, p.brand ?? "", p.variant ?? "", p.size ?? "", ...p.aliases].flatMap(tokens));

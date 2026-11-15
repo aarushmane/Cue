@@ -117,7 +117,7 @@ export function SceneViewer({ modelId, name }: { modelId: string; name: string }
     simFloor.current = floor;
     // Guidance already follows a fixed obstacle-checked path. Replanning each step
     // can change its approach point while the visitor is still following it.
-    if (!viewControl.current?.moving()) void reroute({ position: floor });
+    if (!viewControl.current?.guiding?.()) void reroute({ position: floor });
   }, [reroute]);
   const onSimUnavailable = useCallback((reason: string) => {
     console.warn("3D walk unavailable, using the 360° photos:", reason);

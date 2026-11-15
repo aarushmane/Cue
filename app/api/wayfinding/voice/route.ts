@@ -12,6 +12,7 @@ const Body = WayfindingBody.extend({
   query: z.string().trim().min(1).max(300),
   history: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(2000) })).max(8).default([]),
   current_item_id: z.string().max(100).optional(),
+  clarification: z.object({ options: z.array(z.string().trim().min(1).max(200)).min(1).max(4) }).optional(),
   heading_deg: z.number().finite().min(-360).max(360).optional(),
   speed_mps: z.number().finite().min(0).max(100).optional(),
   walking_speed_mps: z.number().finite().min(0.4).max(1.8).optional(),
@@ -39,7 +40,7 @@ export async function POST(request: Request) {
         const scene = { ...base, items: [...base.items, ...catalog.filter((item) => !known.has(item.id))] };
         signal.throwIfAborted();
         const result = await runVoiceAgent(scene, {
-          query: body.query, start: toStart(body.start, scene), history: body.history, currentItemId: body.current_item_id,
+          query: body.query, start: toStart(body.start, scene), history: body.history, currentItemId: body.current_item_id, clarification: body.clarification,
           signal, searchPhotos: (query) => findInPhotos(scene, query), headingDeg: body.heading_deg, speedMps: body.speed_mps, walkingSpeedMps: body.walking_speed_mps, onEvent: send,
           getPosition: body.session_id ? async () => {
             const base = process.env.VOICE_BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000";

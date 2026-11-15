@@ -17,7 +17,9 @@ export function VoicePanel({ bridge, interruptRef, search, activity }: { bridge:
   const active = ["listening", "thinking", "speaking"].includes(voice.phase);
   const pending = voice.phase === "connecting";
   const label = pending ? "Cancel microphone request" : active ? "Disable microphone" : "Enable microphone";
-  const status = pending ? "Connecting" : voice.phase === "thinking" ? "Working" : voice.phase === "speaking" ? "Speaking" : active ? !voice.listeningOpen ? "Say Hey Cue" : voice.interrupted ? "Stopped" : voice.navigation === "guiding" ? "Guiding" : voice.navigation === "arrived" ? "Arrived" : "Listening" : "Off";
+  const status = pending ? "Connecting" : voice.phase === "thinking" ? "Working" : voice.phase === "speaking" ? "Speaking" : active ? voice.interrupted ? "Stopped" : voice.navigation === "guiding" ? "Guiding" : voice.navigation === "arrived" ? "Arrived" : !voice.listeningOpen ? "Say Hey Cue" : "Listening" : "Off";
+  const listeningStatus = voice.phase === "thinking" || voice.phase === "speaking" ? "Say Hey Cue or Stop to interrupt."
+    : voice.listeningOpen ? "Listening for your request." : "Say Hey Cue for a request.";
 
   return (
     <aside className="voice-panel" aria-label="Voice">
@@ -66,7 +68,7 @@ export function VoicePanel({ bridge, interruptRef, search, activity }: { bridge:
         </Tooltip>
         </div>
         <p id="microphone-status" role="status" className={voice.error ? "voice-error text-destructive" : "sr-only"}>
-          {voice.error ?? (pending ? "Connecting microphone to ElevenLabs." : active ? `${status}. ${voice.listeningOpen ? "Listening for requests and interruptions." : "Say Hey Cue to begin."} Microphone audio is sent to ElevenLabs for transcription.` : "Microphone off.")}
+          {voice.error ?? (pending ? "Connecting microphone to ElevenLabs." : active ? `${status}. ${listeningStatus} Microphone audio is sent to ElevenLabs for transcription.` : "Microphone off.")}
         </p>
         <div className="w-full space-y-2 px-6 text-sm" aria-label="Conversation">
           {voice.transcript && <p className="m-0 break-words text-muted-foreground" aria-label="You">{voice.transcript}</p>}

@@ -234,7 +234,7 @@ export function SimViewer({ modelId, plan, onPosition, onUnavailable, controlRef
     renderer.domElement.className = "absolute inset-0 size-full outline-none";
     renderer.domElement.tabIndex = 0;
     renderer.domElement.setAttribute("role", "application");
-    renderer.domElement.setAttribute("aria-label", "3D store. Use W A S D to walk, drag or the arrow keys to look around.");
+    renderer.domElement.setAttribute("aria-label", "3D store. Use W A S D or Up and Down to walk, Left and Right to turn, and drag to look around.");
     root.prepend(renderer.domElement);
 
     const scene = new THREE.Scene();
@@ -301,12 +301,15 @@ export function SimViewer({ modelId, plan, onPosition, onUnavailable, controlRef
     };
     api.current = { setPlan };
     const stop = () => { state.guide = null; state.turnTo = null; keys.clear(); };
+    const guiding = () => Boolean(state.guide || state.turnTo);
+    const moving = () => guiding() || state.speedMps > 0.05 || ["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown"].some((key) => keys.has(key));
     if (controlRef) controlRef.current = {
       stop,
       turn: (degrees) => { stop(); state.turnTo = { yaw: state.yaw + degrees, pitch: state.pitch }; },
-      moving: () => Boolean(state.guide || state.turnTo),
+      moving,
+      guiding,
       heading: () => wrap(state.yaw),
-      pose: () => state.grid ? { position: { ...state.floor, z: state.grid.floorZ }, headingDeg: wrap(state.yaw), speedMps: state.speedMps, walkingSpeedMps: state.guideMps, moving: Boolean(state.guide || state.turnTo) } : null,
+      pose: () => state.grid ? { position: { ...state.floor, z: state.grid.floorZ }, headingDeg: wrap(state.yaw), speedMps: state.speedMps, walkingSpeedMps: state.guideMps, moving: moving() } : null,
       face: (target) => { stop(); faceTarget(target); },
       speed: (mps) => { state.guideMps = Math.max(0.4, Math.min(1.8, mps)); },
       guide: (plan) => { setPlan(plan); guide(); },
@@ -510,8 +513,6 @@ export function SimViewer({ modelId, plan, onPosition, onUnavailable, controlRef
       // Look keys and smooth turns.
       if (keys.has("ArrowLeft")) state.yaw += TURN_DPS * dt;
       if (keys.has("ArrowRight")) state.yaw -= TURN_DPS * dt;
-      if (keys.has("ArrowUp")) state.pitch = Math.min(85, state.pitch + TURN_DPS * 0.6 * dt);
-      if (keys.has("ArrowDown")) state.pitch = Math.max(-85, state.pitch - TURN_DPS * 0.6 * dt);
       if (state.turnTo) {
         const k = 1 - Math.exp(-dt * 6);
         state.yaw += wrap(state.turnTo.yaw - state.yaw) * k;
@@ -524,8 +525,8 @@ export function SimViewer({ modelId, plan, onPosition, onUnavailable, controlRef
       const yawR = (state.yaw * Math.PI) / 180;
       const fwd = { x: Math.cos(yawR), y: Math.sin(yawR) }, right = { x: Math.sin(yawR), y: -Math.cos(yawR) };
       let mx = 0, my = 0;
-      if (keys.has("KeyW")) { mx += fwd.x; my += fwd.y; }
-      if (keys.has("KeyS")) { mx -= fwd.x; my -= fwd.y; }
+      if (keys.has("KeyW") || keys.has("ArrowUp")) { mx += fwd.x; my += fwd.y; }
+      if (keys.has("KeyS") || keys.has("ArrowDown")) { mx -= fwd.x; my -= fwd.y; }
       if (keys.has("KeyD")) { mx += right.x; my += right.y; }
       if (keys.has("KeyA")) { mx -= right.x; my -= right.y; }
       const len = Math.hypot(mx, my);
