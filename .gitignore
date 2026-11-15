@@ -13,6 +13,13 @@
 # testing
 /coverage
 
+# Python backend
+**/.venv/
+**/__pycache__/
+**/.pytest_cache/
+**/.ruff_cache/
+*.py[cod]
+
 # next.js
 /.next/
 /out/
@@ -40,3 +47,16 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# playwright
+/test-results/
+/playwright-report/
+/.artifacts/
+
+# Hackathon data (CoStar track): hackathon use only, never commit
+/data/models_index.csv
+/data/costar-kit/
+# Venue photos for localization evals (scripts/eval-localize.mts): local only, never commit
+/data/venue-scans/
+/data/localize-eval*.json
+__pycache__
