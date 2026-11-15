@@ -1,0 +1,54 @@
+{
+  "sid": "UzwrJ9TbQuG",
+  "name": "J&B Food Market",
+  "address": "3637 Sunbeam St, Houston, TX, 77051, US",
+  "geolocation": {
+    "lat": "29.6501589",
+    "long": "-95.3687710"
+  },
+  "summary": "A well-stocked single-floor convenience store featuring snack aisles, refrigerated beverage coolers, a deli counter, and an ice display \u2014 offering a wide variety of everyday essentials.",
+  "obj": "f3ff8cc839744bc5bb8a42f03fd3a91e.obj",
+  "mtl": "f3ff8cc839744bc5bb8a42f03fd3a91e.mtl",
+  "bounds": {
+    "min": [
+      -3.231922,
+      -2.345493,
+      -0.07006
+    ],
+    "max": [
+      16.91,
+      11.678497,
+      2.906235
+    ]
+  },
+  "up": "z",
+  "cloud": {
+    "file": "cloud.bin",
+    "count": 5467728,
+    "min": [
+      -3.231921911239624,
+      -2.3454930782318115,
+      -0.07103399932384491
+    ],
+    "scale": [
+      0.0003073460247833282,
+      0.00021399598335847259,
+      4.5324297389015555e-05
+    ]
+  },
+  "baked": {
+    "obj": "baked_rebuilt/mesh.obj",
+    "mtl": "baked_rebuilt/mesh.mtl",
+    "atlases": 7,
+    "atlas_size": 4096,
+    "finest_texel_mm": 2.492,
+    "mesh": "rebuilt"
+  },
+  "rebuilt": {
+    "obj": "rebuilt/mesh.obj",
+    "triangles": 800000,
+    "depth_points": 132177,
+    "poisson_depth": 11,
+    "voxel_m": 0.008
+  }
+}

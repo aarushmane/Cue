@@ -112,7 +112,7 @@ describe("planning a route to an item", () => {
   it("reports ALREADY_THERE at the best stand point", () => {
     const here = planRouteToItem(scene(), { sweepId: "b2" }, CHIPS);
     expect(here.status).toBe("ALREADY_THERE");
-    if (here.status === "ALREADY_THERE") expect(here.legs[0].text).toBe("Potato chips is about 2 meters from here.");
+    if (here.status === "ALREADY_THERE") expect(here.legs[0].text).toBe("Potato chips is about 2 steps from here.");
   });
   it("routes from a free position near the scan points", () => {
     const plan = planRouteToItem(scene(), { position: v3(5.5, 1.5, 0), floorId: "f1" }, SODA);
@@ -199,5 +199,15 @@ describe("drawing the route on screen", () => {
     expect(right.x).toBeCloseTo(W - 40);
     const behindLeft = edgeIndicator(project(v3(8, -10, 1.6)), { w: W, h: H })!; // behind and to the right → mirrored
     expect(behindLeft.x).toBeGreaterThan(W / 2);
+  });
+});
+
+describe("distances in steps", () => {
+  it("rounds to whole steps of about 0.75 m", async () => {
+    const { aboutSteps, stepsFor } = await import("@/lib/wayfinding/steps");
+    expect(stepsFor(0.2)).toBe(1);
+    expect(aboutSteps(0.6)).toBe("a step");
+    expect(aboutSteps(3)).toBe("about 4 steps");
+    expect(aboutSteps(5.6)).toBe("about 7 steps");
   });
 });

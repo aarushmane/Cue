@@ -34,6 +34,17 @@ const CATEGORY_WORDS: Record<string, string[]> = {
   soup: ["soup", "noodles"],
   cracker: ["crackers"],
   tea: ["tea"],
+  coffee: ["coffee"],
+  creamer: ["creamer"],
+  tobacco: ["tobacco", "cigarettes", "cigars", "vape"],
+  cigarette: ["cigarettes", "tobacco"],
+  vape: ["vape", "e-cigarettes"],
+  sauce: ["sauce", "hot sauce", "salsa"],
+  salsa: ["salsa", "sauce"],
+  "ice cream": ["ice cream"],
+  ice: ["ice cream", "ice"],
+  movie: ["movie", "dvd"],
+  dvd: ["movie", "dvd"],
 };
 
 const singularWords = (q: string) => normalize(q).split(" ").map((w) => (w.length > 3 && w.endsWith("s") ? w.slice(0, -1) : w));
@@ -56,8 +67,13 @@ export function matchCategory(items: SceneItem[], query: string): SceneItem[] {
   if (!wanted.size) return [];
   return items.filter((i) => {
     if (exact && i.category && singularWords(i.category).join(" ") === phrase) return true;
-    const c = normalize(i.category ?? "");
-    return c && [...wanted].some((w) => c === w || c.includes(w) || w.includes(c));
+    // Whole words only ("chocolate" must not match "cola"): one side's words all appear in the other's.
+    const c = singularWords(i.category ?? "").filter(Boolean);
+    if (!c.length) return false;
+    return [...wanted].some((w) => {
+      const ws = singularWords(w);
+      return ws.every((x) => c.includes(x)) || c.every((x) => ws.includes(x));
+    });
   });
 }
 

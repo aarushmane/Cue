@@ -138,6 +138,9 @@ describe("category questions and model quota", () => {
     expect(matchCategory(items, "batteries")).toEqual([]);
     const cakes = [...items, { id: "e", name: "Hostess", category: "snack cakes", position: at, source: "vision" as const }];
     expect(matchCategory(cakes, "snack cakes").map((i) => i.id)).toEqual(["e"]); // exact category beats "snack" → chips
+    const sweets = [...items, { id: "f", name: "M&M's", category: "chocolate", position: at, source: "vision" as const }];
+    expect(matchCategory(sweets, "soda").map((i) => i.id)).toEqual(["d"]); // "chocolate" is not "cola"
+    expect(matchCategory(items, "potato chips").map((i) => i.id)).toEqual(["a"]); // "chips" inside "potato chips"
   });
 
   it("recognises quota errors and moves to the next model until the limit resets", async () => {

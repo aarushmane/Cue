@@ -34,7 +34,7 @@ describe("wayfinding deep agent", () => {
     const model = new ScriptedChat([
       new AIMessage({ content: "", tool_calls: [{ id: "t1", name: "find_item", args: { query: "where are the chips" } }] }),
       new AIMessage({ content: "", tool_calls: [{ id: "t2", name: "plan_route", args: { item_id: "chips" } }] }),
-      new AIMessage("Head this way for about 3 meters."),
+      new AIMessage("Head this way for about 4 steps."),
     ]);
     const out = await runWayfinding(scene(), { query: "where are the chips", start: { sweepId: "a" } }, { model });
     expect(out.tool_calls).toEqual(["find_item", "plan_route"]);
@@ -44,7 +44,7 @@ describe("wayfinding deep agent", () => {
       expect(out.plan.waypointIds).toEqual(["a", "b", "c"]);
       expect(out.plan.arrows.length).toBeGreaterThan(3);
     }
-    expect(out.reply).toBe("Head this way for about 3 meters.");
+    expect(out.reply).toBe("Head this way for about 4 steps.");
   });
 
   it("locates an unmapped item from detections before planning", { timeout: 20_000 }, async () => {

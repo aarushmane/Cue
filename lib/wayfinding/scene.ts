@@ -128,15 +128,19 @@ async function scanMesh(modelId: string): Promise<Surfaces | undefined> {
 const skyboxes = new Map<string, { at: number; value: Promise<Map<string, string>> }>();
 
 /** Signed skybox face URL templates per scan point (`<face>` → 0–5), fresh enough to fetch right away. */
-export function skyboxTemplates(modelId: string): Promise<Map<string, string>> {
-  const hit = skyboxes.get(modelId);
+export type SkyboxResolution = "high" | "2k" | "4k";
+
+/** `res`: "high" (1024 px faces, used for detection), "2k" or "4k" (the walkable simulation's photo projection). */
+export function skyboxTemplates(modelId: string, res: SkyboxResolution = "high"): Promise<Map<string, string>> {
+  const key = `${modelId}:${res}`;
+  const hit = skyboxes.get(key);
   if (hit && Date.now() - hit.at < 2 * 60_000) return hit.value;
-  const value = graph<{ model: { panoLocations?: { id: string; high?: { urlTemplate?: string | null } | null }[] } | null }>(
-    `query Skyboxes($id: ID!) { model(id: $id) { panoLocations { id high: skybox(resolution: "high") { urlTemplate } } } }`,
-    { id: modelId },
-  ).then((data) => new Map((data.model?.panoLocations ?? []).flatMap((p) => (p.high?.urlTemplate ? [[p.id, p.high.urlTemplate] as const] : []))));
-  skyboxes.set(modelId, { at: Date.now(), value });
-  value.catch(() => skyboxes.delete(modelId));
+  const value = graph<{ model: { panoLocations?: { id: string; sky?: { urlTemplate?: string | null } | null }[] } | null }>(
+    `query Skyboxes($id: ID!, $res: String!) { model(id: $id) { panoLocations { id sky: skybox(resolution: $res) { urlTemplate } } } }`,
+    { id: modelId, res },
+  ).then((data) => new Map((data.model?.panoLocations ?? []).flatMap((p) => (p.sky?.urlTemplate ? [[p.id, p.sky.urlTemplate] as const] : []))));
+  skyboxes.set(key, { at: Date.now(), value });
+  value.catch(() => skyboxes.delete(key));
   return value;
 }
 

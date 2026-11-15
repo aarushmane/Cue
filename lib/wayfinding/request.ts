@@ -2,6 +2,7 @@
 import "server-only";
 import { z } from "zod";
 import { getDb } from "../db/client";
+import { isDemoScene } from "../scenes/demo";
 import { loadScene, ObstacleInput, SceneItemInput } from "./scene";
 import type { StartPoint, Waypoint, WayfindingScene } from "./types";
 
@@ -49,7 +50,14 @@ export type WayfindingBody = z.infer<typeof WayfindingBody>;
 
 export function toStart(s: WayfindingBody["start"], scene: WayfindingScene): StartPoint {
   if (s.sweep_id && scene.waypoints.some((w) => w.id === s.sweep_id)) return { sweepId: s.sweep_id };
-  if (s.position) return { position: s.position, floorId: s.floor_id ?? null };
+  if (s.position) {
+    // Standing on a scan or aisle point (e.g. where "walk me there" stopped): plan from that point, so the route
+    // agrees with where the visitor was just sent.
+    const p = s.position;
+    const on = scene.waypoints.find((w) => Math.hypot(w.position.x - p.x, w.position.y - p.y) < 0.35);
+    if (on) return { sweepId: on.id };
+    return { position: s.position, floorId: s.floor_id ?? null };
+  }
   if (s.sweep_id) return { sweepId: s.sweep_id }; // unknown id: the planner reports START_INVALID
   // Matterport labels scan points in capture order; "0" is where the scan (and the default tour) starts.
   const first = [...scene.waypoints].sort((a, b) => (Number(a.label) || 0) - (Number(b.label) || 0))[0];
@@ -62,6 +70,7 @@ export const toOptions = (o: WayfindingBody["options"]) => ({
 
 /** Only scans registered to a property are served (same rule as the tour pages). */
 export async function assertRegistered(modelId: string) {
+  if (isDemoScene(modelId)) return;
   const registered = await getDb("read").from("stores").select("id").eq("matterport_model_id", modelId).limit(1);
   if (registered.error) throw new HttpError(503, "Could not look up the saved scene.");
   if (!registered.data?.length) throw new HttpError(404, "Add this model to a property before routing in it.");

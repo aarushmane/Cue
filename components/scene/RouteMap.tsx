@@ -1,4 +1,5 @@
 import type { RoutePlan } from "@/lib/wayfinding/types";
+import { aboutSteps } from "@/lib/wayfinding/steps";
 
 type OkPlan = Extract<RoutePlan, { status: "OK" | "ALREADY_THERE" }>;
 
@@ -18,7 +19,7 @@ export function RouteMap({ plan, className }: { plan: OkPlan; className?: string
   const start = plan.polyline[0];
 
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} className={className} role="img" aria-label={`Route map: ${plan.totalDistanceM} m to ${plan.item.name}`}>
+    <svg viewBox={`0 0 ${w} ${h}`} className={className} role="img" aria-label={`Route map: ${aboutSteps(plan.totalDistanceM)} to ${plan.item.name}`}>
       <polyline
         points={plan.polyline.map((p) => `${X(p.x)},${Y(p.y)}`).join(" ")}
         className="fill-none stroke-primary" strokeWidth={Math.max(w, h) / 45} strokeLinecap="round" strokeLinejoin="round"

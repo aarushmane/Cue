@@ -10,6 +10,9 @@ import { Separator } from "@/components/ui/separator";
 import { lookAhead } from "@/lib/wayfinding/screen";
 import { RouteMap } from "./RouteMap";
 import { PanoViewer, type PanoSweep } from "./PanoViewer";
+import { SimViewer } from "@/components/sim/SimViewer";
+import type { Vec3 } from "@/lib/wayfinding/types";
+import { aboutSteps } from "@/lib/wayfinding/steps";
 import { RouteOverlay } from "./RouteOverlay";
 import { connectShowcase, SDK_KEY, stepAlong, toApi, watchSweeps, type ClientWaypoint, type Pose } from "./showcase";
 import { useWayfinding } from "./useWayfinding";
@@ -18,7 +21,9 @@ import { useWayfinding } from "./useWayfinding";
  * Matterport Showcase embed. Showcase owns navigation: select a floor marker (or use the arrow keys) to jump between
  * scan points, drag to look around. `play=1` starts the tour without the play button and `qs=1` skips the fly-in.
  * With NEXT_PUBLIC_MATTERPORT_SDK_KEY set, the SDK reports the camera so routes are drawn inside the 3D view.
- * Without a key, the built-in 360° viewer (PanoViewer) replaces the embed so the route can be drawn on the floor.
+ * Without a key, the walkable 3D simulation (SimViewer: the scan's textured mesh with its photos projected on, WASD
+ * to walk) replaces the embed, with the route drawn on the floor. If it can't run, the 360° photo viewer (PanoViewer)
+ * takes over, and failing that the plain embed.
  */
 export function showcaseUrl(modelId: string) {
   return `https://my.matterport.com/show/?${new URLSearchParams({ m: modelId, play: "1", qs: "1", ...(SDK_KEY ? { applicationKey: SDK_KEY } : {}) })}`;
@@ -48,15 +53,21 @@ export function SceneViewer({ modelId, name }: { modelId: string; name: string }
   const [stepping, setStepping] = useState(false);
   // The route panel folds down to one line so it doesn't cover the tour.
   const [folded, setFolded] = useState(false);
-  // Built-in 360° viewer (no SDK key): which scan point the visitor stands on.
+  // Walkable simulation (no SDK key): where the visitor stands, and a counter that starts "walk me there".
+  const [simFailed, setSimFailed] = useState(false);
+  const sim = !SDK_KEY && !simFailed;
+  const simFloor = useRef<Vec3 | null>(null);
+  const [guideKey, setGuideKey] = useState(0);
+  // Built-in 360° viewer (fallback): which scan point the visitor stands on.
   const [panoFailed, setPanoFailed] = useState(false);
-  const pano = !SDK_KEY && !panoFailed;
+  const pano = !SDK_KEY && simFailed && !panoFailed;
   const [sweepId, setSweepId] = useState<string | null>(null);
   const firstSweep = useRef<string | null>(null);
   const [faceKey, setFaceKey] = useState(0);
 
   const sweeps = useRef<ClientWaypoint[]>([]);
   const context = useCallback(() => {
+    if (sim) return { start: simFloor.current ? { position: simFloor.current } : {} };
     if (pano) return { start: sweepId ? { sweep_id: sweepId } : {} };
     const current = pose.current;
     if (!sdk || !current) return { start: {} };
@@ -64,7 +75,7 @@ export function SceneViewer({ modelId, name }: { modelId: string; name: string }
       start: { sweep_id: current.sweep || undefined, position: toApi(sdk, current.position) },
       waypoints: sweeps.current.length ? sweeps.current : undefined,
     };
-  }, [sdk, pano, sweepId]);
+  }, [sdk, sim, pano, sweepId]);
   const wayfinding = useWayfinding(modelId, context);
   const { reroute } = wayfinding;
 
@@ -78,6 +89,14 @@ export function SceneViewer({ modelId, name }: { modelId: string; name: string }
   const onUnavailable = useCallback((reason: string) => {
     console.warn("360° viewer unavailable, using the Matterport tour:", reason);
     setPanoFailed(true);
+  }, []);
+  const onSimPosition = useCallback((floor: Vec3) => {
+    simFloor.current = floor;
+    void reroute({ position: floor }); // walking re-plans the route from where the visitor stopped
+  }, [reroute]);
+  const onSimUnavailable = useCallback((reason: string) => {
+    console.warn("3D walk unavailable, using the 360° photos:", reason);
+    setSimFailed(true);
   }, []);
   // Moving re-plans the route from the new scan point.
   useEffect(() => { if (pano && sweepId) void reroute({ sweep_id: sweepId }); }, [pano, sweepId, reroute]);
@@ -109,7 +128,7 @@ export function SceneViewer({ modelId, name }: { modelId: string; name: string }
 
   // Reloading the embed returns the visitor to the tour's start point.
   function resetView() {
-    if (pano) { setSweepId(firstSweep.current); setSession((value) => value + 1); return; }
+    if (sim || pano) { setSweepId(firstSweep.current); setSession((value) => value + 1); return; }
     setStatus("loading");
     setSession((value) => value + 1);
   }
@@ -130,6 +149,7 @@ export function SceneViewer({ modelId, name }: { modelId: string; name: string }
   }
 
   async function nextStop() {
+    if (sim && plan) { setGuideKey((k) => k + 1); return; }
     if (pano && plan) {
       const ids = plan.waypointIds;
       const at = sweepId ? ids.indexOf(sweepId) : -1;
@@ -155,7 +175,9 @@ export function SceneViewer({ modelId, name }: { modelId: string; name: string }
   const s = wayfinding.state;
   return (
     <main ref={viewport} className="scene" aria-label={name}>
-      {pano ? (
+      {sim ? (
+        <SimViewer key={session} modelId={modelId} plan={plan} guideKey={guideKey} onPosition={onSimPosition} onUnavailable={onSimUnavailable} />
+      ) : pano ? (
         <PanoViewer
           key={session}
           modelId={modelId}
@@ -178,7 +200,7 @@ export function SceneViewer({ modelId, name }: { modelId: string; name: string }
         onLoad={() => setStatus("ready")}
       />}
       {sdk && plan && <RouteOverlay sdk={sdk} plan={plan} />}
-      {!pano && status === "loading" && (
+      {!pano && !sim && status === "loading" && (
         <div className="scene-status" role="status">
           <LoaderCircle className="size-6 animate-spin text-primary motion-reduce:animate-none" aria-hidden="true" />
           <span className="sr-only">Loading scene…</span>
@@ -205,7 +227,7 @@ export function SceneViewer({ modelId, name }: { modelId: string; name: string }
             </Tooltip>
           </form>
           <Separator orientation="vertical" className="h-6" />
-          <ToolButton label="Reset view" disabled={!pano && status !== "ready"} onClick={resetView}><RotateCcw aria-hidden="true" /></ToolButton>
+          <ToolButton label="Reset view" disabled={!pano && !sim && status !== "ready"} onClick={resetView}><RotateCcw aria-hidden="true" /></ToolButton>
           <Separator orientation="vertical" className="h-6" />
           <ToolButton label={fullscreen ? "Exit fullscreen" : "Enter fullscreen"} onClick={toggleFullscreen}>
             {fullscreen ? <Shrink aria-hidden="true" /> : <Expand aria-hidden="true" />}
@@ -219,8 +241,8 @@ export function SceneViewer({ modelId, name }: { modelId: string; name: string }
                 {s.status === "ready" && s.item ? s.item.name : s.status === "choose" ? "Which one?" : "No route"}
               </h2>
               <div className="flex shrink-0 items-center">
-                {(sdk || pano) && plan && (
-                  <ToolButton label={plan.status === "OK" ? "Next stop" : "Face the item"} disabled={stepping} onClick={nextStop}>
+                {(sdk || pano || sim) && plan && (
+                  <ToolButton label={plan.status === "OK" ? (sim ? "Walk me there" : "Next stop") : "Face the item"} disabled={stepping} onClick={nextStop}>
                     {plan.status === "OK" ? <Footprints aria-hidden="true" /> : <Crosshair aria-hidden="true" />}
                   </ToolButton>
                 )}
@@ -230,7 +252,7 @@ export function SceneViewer({ modelId, name }: { modelId: string; name: string }
                 <ToolButton label="Clear route" onClick={() => wayfinding.clear()}><X aria-hidden="true" /></ToolButton>
               </div>
             </div>
-            {folded && plan && <p className="m-0 font-mono text-label text-muted-foreground">{plan.totalDistanceM} m · {plan.waypointIds.length} stops</p>}
+            {folded && plan && <p className="m-0 font-mono text-label text-muted-foreground">{plan.status === "ALREADY_THERE" ? "You're there" : aboutSteps(plan.totalDistanceM)}</p>}
             {!folded && s.status === "choose" && (
               <ul className="m-0 mt-2 flex list-none flex-col gap-1 p-0">
                 {s.options.map((option) => (
@@ -246,12 +268,12 @@ export function SceneViewer({ modelId, name }: { modelId: string; name: string }
                 {s.plan && "reason" in s.plan && <p className="m-0 mt-1 text-body text-muted-foreground">{s.plan.reason}</p>}
                 {plan && (
                   <>
-                    <p className="m-0 mt-1 font-mono text-label text-muted-foreground">{plan.totalDistanceM} m · {plan.waypointIds.length} stops</p>
+                    <p className="m-0 mt-1 font-mono text-label text-muted-foreground">{plan.status === "ALREADY_THERE" ? "You're there" : aboutSteps(plan.totalDistanceM)}</p>
                     <ol className="m-0 mt-2 flex flex-col gap-1 pl-5 text-body">
                       {plan.legs.map((leg) => <li key={leg.index}>{leg.text}</li>)}
                     </ol>
                     {plan.warnings.map((warning) => <p key={warning} className="m-0 mt-2 text-label text-warning">{warning}</p>)}
-                    {!sdk && !pano && <RouteMap plan={plan} className="mt-2 h-40 w-full rounded-md bg-muted" />}
+                    {!sdk && !pano && !sim && <RouteMap plan={plan} className="mt-2 h-40 w-full rounded-md bg-muted" />}
                   </>
                 )}
               </>

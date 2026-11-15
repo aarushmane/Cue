@@ -8,6 +8,7 @@
 import { classifyTurn } from "../routing/instructions";
 import { dist2, headingDeg, length, lerp, normalize, segmentBlocked, segmentDistance, sub, turnDeg, v3 } from "./geometry";
 import { raycast } from "./mesh";
+import { aboutSteps } from "./steps";
 import { segmentWalkable, type WalkGrid } from "./walkable";
 import type { Obstacle, RouteArrow, RouteLeg, RoutePlan, SceneItem, StartPoint, Turn, Vec3, Waypoint, WayfindingScene } from "./types";
 
@@ -39,9 +40,9 @@ const START = "__start__";
 const onFloor = (o: Obstacle, floorId: string | null | undefined) => o.floorId == null || floorId == null || o.floorId === floorId;
 const round = (x: number, d = 1) => Math.round(x * 10 ** d) / 10 ** d;
 
-function clear(a: Vec3, b: Vec3, obstacles: Obstacle[], floorId: string | null | undefined, clearance: number, ignore?: (o: Obstacle) => boolean, walk?: WalkGrid) {
+function clear(a: Vec3, b: Vec3, obstacles: Obstacle[], floorId: string | null | undefined, clearance: number, ignore?: (o: Obstacle) => boolean, walk?: WalkGrid, walkClearance = Math.min(clearance, 0.25)) {
   // On the mesh's walkable floor, a planner-added edge must also keep (a little less than) its clearance there.
-  if (walk && !segmentWalkable(walk, a, b, Math.min(clearance, 0.25))) return false;
+  if (walk && !segmentWalkable(walk, a, b, walkClearance)) return false;
   return !obstacles.some((o) => onFloor(o, floorId) && !(ignore?.(o)) && segmentBlocked(a, b, o, clearance));
 }
 
@@ -72,10 +73,6 @@ const TURN_PHRASE: Record<Turn, string> = {
   left: "Turn left", right: "Turn right", around: "Turn around",
 };
 
-function aboutMeters(m: number) {
-  const r = Math.max(1, Math.round(m));
-  return `about ${r} meter${r === 1 ? "" : "s"}`;
-}
 
 /** Where the item is relative to someone who walked in along `headingIn` and now stands at `at`. */
 export function sideOf(headingIn: number, at: Vec3, item: Vec3): "ahead" | "behind" | "left" | "right" {
@@ -136,7 +133,7 @@ export function planRouteToItem(scene: WayfindingScene, start: StartPoint, item:
     const near = scene.waypoints
       .filter((w) => start.floorId == null || w.floorId === start.floorId)
       .map((w) => ({ w, d: dist2(w.position, start.position) }))
-      .filter(({ w, d }) => d <= 6 && clear(start.position, w.position, scene.obstacles, w.floorId, 0.15, undefined, scene.walk))
+      .filter(({ w, d }) => d <= 6 && clear(start.position, w.position, scene.obstacles, w.floorId, 0.15, undefined, scene.walk, 0.03))
       .sort((a, b) => a.d - b.d)
       .slice(0, 4);
     if (!near.length) return { status: "START_INVALID", reason: "Your position is not near any scan point with a clear path." };
@@ -198,7 +195,7 @@ export function planRouteToItem(scene: WayfindingScene, start: StartPoint, item:
 
   if (nodes.length === 1 || length(sub(nodes[0].p, goal.position)) < 0.05) {
     // Already at the best spot: the only direction left is which way to look.
-    const near = `${item.name} is ${aboutMeters(dist2(goal.position, item.position))} from here.`;
+    const near = `${item.name} is ${aboutSteps(dist2(goal.position, item.position))} from here.`;
     return {
       status: "ALREADY_THERE", item, waypointIds: [goal.id], polyline: [goal.position], standPoint: goal.position, facingDeg,
       legs: [{ index: 0, from: goal.position, to: goal.position, toWaypointId: goal.id, distanceM: 0, headingDeg: facingDeg, turn: null, text: near }],
@@ -236,7 +233,7 @@ export function planRouteToItem(scene: WayfindingScene, start: StartPoint, item:
   }
   const legs: RouteLeg[] = merged.map((s, k) => {
     const turn = k === 0 ? null : turnOf(turnDeg(merged[k - 1].heading, s.heading));
-    const text = k === 0 ? `Head this way for ${aboutMeters(s.d)}.` : `${TURN_PHRASE[turn!]} and walk ${aboutMeters(s.d)}.`;
+    const text = k === 0 ? `Head this way for ${aboutSteps(s.d)}.` : `${TURN_PHRASE[turn!]} and walk ${aboutSteps(s.d)}.`;
     return { index: k, from: s.from, to: s.to, toWaypointId: s.toId, distanceM: round(s.d), headingDeg: round(s.heading), turn, text };
   });
   const side = sideOf(merged.at(-1)!.heading, goal.position, item.position);
@@ -244,7 +241,7 @@ export function planRouteToItem(scene: WayfindingScene, start: StartPoint, item:
   legs.push({
     index: legs.length, from: goal.position, to: goal.position, toWaypointId: goal.id, distanceM: 0,
     headingDeg: facingDeg, turn: null,
-    text: `${item.name} is ${where}, ${aboutMeters(dist2(goal.position, item.position))} away.`,
+    text: `${item.name} is ${where}, ${aboutSteps(dist2(goal.position, item.position))} away.`,
   });
 
   // ── Arrows ──

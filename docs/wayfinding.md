@@ -11,7 +11,7 @@ over the Matterport tour.
 | Aisle points | `lib/wayfinding/walkable.ts` | Walkable floor grid from the mesh (10 cm cells; blocked where anything sits 0.15–1.9 m above the floor) and extra standing points about every metre along the aisles, linked where the straight line keeps ≥ 0.24 m clearance. |
 | Find from detections | `locateFromDetections` | Detections → 3D rays from scan points → mesh hit (clustered), else triangulated (≥ 2 sweeps), else the first shelf box. |
 | Plan | `lib/wayfinding/plan.ts` `planRouteToItem` | Scan points + Matterport neighbour links; obstacle-checked extra edges; picks the best place to stand. |
-| Describe | same | Legs with turn text (fixed templates), floor arrows every 0.8 m, facing direction at the end. |
+| Describe | same, `lib/wayfinding/steps.ts` | Legs with turn text (fixed templates) in approximate steps (0.75 m each: "Turn right and walk about 4 steps."), floor arrows every 0.8 m, facing direction at the end. |
 | Draw | `lib/wayfinding/screen.ts`, `components/scene/RouteOverlay.tsx` | Projects the route with the Showcase SDK camera; edge arrow when the next stretch is off screen. |
 | Agent | `lib/agents/wayfinding/` | LangChain deepagents; tools wrap the steps above. The model never computes geometry. |
 
@@ -39,7 +39,10 @@ Put them in `data/wayfinding/<modelId>.json` (see `data/wayfinding/README.md`) o
 ## API
 
 `POST /api/wayfinding/route` (deterministic, no model call) and `POST /api/wayfinding/agent` (natural language, needs an
-AI provider; rate limited by `WAYFINDING_AGENT_RATE_LIMIT`). Only models registered in `stores` are served.
+AI provider; rate limited by `WAYFINDING_AGENT_RATE_LIMIT`). Only models registered in `stores` are served, plus the
+demo scans in `lib/scenes/demo.ts` (J&B Food Market `UzwrJ9TbQuG`, which the home page opens, and Sample Storefront
+`Muo5jpq44Xk`). Both have a saved catalogue in `data/wayfinding/`. A `start.position` within 35 cm of a scan or aisle
+point plans from that point.
 
 ```json
 {
@@ -86,6 +89,33 @@ through them), `polyline`, `standPoint`, `facingDeg`, `legs[].text`, `arrows[]` 
   looks close to a photo; deeper in the store, surfaces every camera saw at a steep angle smear. `?at=<point id>`
   opens the view at a given point.
 - If the photos cannot load, the page falls back to the Showcase embed with directions and a top-down map in the panel.
+
+## Walkable simulation (default without an SDK key)
+
+`components/sim/SimViewer.tsx` combines Mann's first-person walkthrough (`jb_store/`) with the wayfinding layer:
+
+- **Geometry and textures:** the model's MatterPak (official Model API bundle `mp:matterpak`), read with HTTP range
+  requests (only the OBJ, MTL and textures; not the 220 MB point cloud) and packed into an indexed binary by
+  `lib/sim/matterpak.ts`. Cached under the OS temp folder; ~3 s the first time per model. Served by `GET /api/sim/mesh`
+  and `GET /api/sim/texture`.
+- **Photo look (Mann's renderer, `jb_store/viewer/panotex.js`, ported):** if Mann's pipeline has baked photo textures
+  for the model (`jb_store/data/<sid>/meta.json` → `baked`, from `bake_textures.py`), that mesh is drawn as is and **T**
+  shows the original MatterPak. Otherwise the scan's 2k photos (`?pano=4k` for 4k) are projected live: per pixel, the
+  photo that sees it most squarely and closest wins (weight |n·d|^1.5 / r², straight down ×0.02), occlusion from a
+  distance cube map per photo, mip level matched to the pixel footprint; unseen surfaces keep the MatterPak texture,
+  holes stay white. **T** switches to the plain MatterPak textures (`?tex=matterpak` to start so). Rendering is sRGB.
+- **Walking:** WASD (Shift faster), drag or arrow keys to look, scroll to zoom, **1–9** or a floor ring to jump to a
+  photo spot. Collisions use the walkable grid from the scan mesh (`GET /api/sim/walk`, `lib/sim/walk.ts`): you stop
+  22 cm from shelves and slide along them, and can always step out of a tight spot.
+- **Route:** drawn in the scene as geometry on the floor (band, pulsing chevrons, stand ring), so shelves hide it; the
+  item pin shows through. Off-screen, an edge arrow points the way. The band is redrawn from your feet every 5 cm you
+  move (`lib/sim/livePath.ts`: the walked part disappears; a connector joins you back if you step off, never through a
+  shelf), and the route is re-planned from where you are (`start.position`) every 0.25 s / 0.25 m while you walk and
+  once when you stop; a failed re-plan keeps the last route. **Walk me there** follows the route to the stand point
+  and turns to the item.
+- **Fallbacks:** without WebGL2 or a MatterPak, the 360° photo viewer (`PanoViewer`), then the Showcase embed.
+- **Search order:** the search box asks `/api/wayfinding/route` first (catalogue, then photo search); the agent is only
+  asked when that finds nothing.
 
 ## Photo search notes
 

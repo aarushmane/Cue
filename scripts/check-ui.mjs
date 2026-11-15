@@ -33,8 +33,8 @@ try {
     page.on("pageerror", (error) => errors.push(error.message));
     const response = await page.goto(url);
     assert.equal(response.status(), 200);
-    // Showcase embed when an SDK key is set (or the 360° photos are unavailable), otherwise the built-in 360° viewer.
-    const embed = page.locator("iframe.scene-embed, canvas[role=img]").first();
+    // Showcase embed when an SDK key is set, otherwise the walkable 3D simulation (or its 360° photo fallback).
+    const embed = page.locator("iframe.scene-embed, canvas[role=img], canvas[role=application]").first();
     const reset = page.getByRole("button", { name: "Reset view", exact: true });
     await expect(reset).toBeEnabled({ timeout: 30_000 }).catch(async (error) => {
       console.log("Load failure:", label, await page.locator("body").innerText(), errors);
