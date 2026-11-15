@@ -3,12 +3,11 @@
   "version": "0.2.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "node scripts/dev.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "next typegen && tsc --noEmit",
-    "property:add-example": "node --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/add-example-property.mjs",
     "wayfinding:catalog": "node scripts/save-catalog.mjs"
   },
   "dependencies": {
@@ -20,7 +19,6 @@
     "@langchain/google-genai": "^2.3.6",
     "@langchain/langgraph": "^1.7.4",
     "@matterport/sdk": "^1.6.2",
-    "@supabase/supabase-js": "^2.119.0",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.5.2",
     "deepagents": "^1.16.5",

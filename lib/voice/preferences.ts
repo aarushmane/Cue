@@ -16,8 +16,8 @@ export const STANDARD_VOICES = [
   { id: "OZ0L6eISlOejga3XjDFt", name: "Talia" },
 ];
 
-/** Transcript-based wake detection. Scribe commonly spells Cue as queue or Q. */
+/** Accept transcript punctuation, joined words, and phonetic spellings of Cue. */
 export function wakeCommand(text: string): { wake: boolean; command: string } {
-  const match = /^\s*hey[\s,]+(?:cue|queue|q|kew)(?=[\s,.!?:;]|$)[\s,.!?:;]*/i.exec(text);
+  const match = /^[\s\p{P}]*hey[\s\p{P}]*(?:cue|queue|q|kew|que)(?=[\s\p{P}]|$)[\s\p{P}]*/iu.exec(text);
   return { wake: Boolean(match), command: match ? text.slice(match[0].length).trim() : text.trim() };
 }

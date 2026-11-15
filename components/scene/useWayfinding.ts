@@ -19,9 +19,7 @@ async function post(path: string, body: unknown, signal: AbortSignal) {
 }
 
 /**
- * Ask for an item and get a route. The deterministic route endpoint answers first (product catalogue, then a photo
- * search): it is instant for anything catalogued and never gives up on a whim. Only when it finds nothing does the
- * wayfinding agent get a turn, for wording the matcher doesn't understand.
+ * Search the saved catalog and plan once. A miss never starts a second agent search.
  */
 export function useWayfinding(modelId: string, context: () => WayfindingContext) {
   const [state, setState] = useState<WayfindingState>({ status: "idle" });
@@ -36,23 +34,22 @@ export function useWayfinding(modelId: string, context: () => WayfindingContext)
     setState((previous) => previous.status === "loading" ? { status: "idle" } : previous);
   }, []);
   const adopt = useCallback((query: string, reply: string, item: SceneItem | null, plan: RoutePlan) => {
+    if ("item" in plan) {
+      if (item && item.id !== plan.item.id) return;
+      item = plan.item;
+    }
     inflight.current?.abort(); rerouting.current?.abort(); queued.current = null;
     setState({ status: "ready", query, reply, item, plan });
   }, []);
 
-  const run = useCallback(async (query: string, body: Record<string, unknown>, agent: boolean) => {
+  const run = useCallback(async (query: string, body: Record<string, unknown>) => {
     inflight.current?.abort();
     const abort = new AbortController();
     inflight.current = abort;
     setState({ status: "loading", query });
     try {
       const payload = { model_id: modelId, ...context(), ...body };
-      let result = await post("/api/wayfinding/route", payload, abort.signal);
-      if (agent && !abort.signal.aborted && result.data.status === "ITEM_NOT_FOUND") {
-        const second = await post("/api/wayfinding/agent", payload, abort.signal);
-        // Keep the agent's answer only if it worked (no AI, out of quota or a failure leave the first answer).
-        if (second.response.ok) result = second;
-      }
+      const result = await post("/api/wayfinding/route", payload, abort.signal);
       const { response, data } = result;
       if (abort.signal.aborted) return;
       if (data.status === "AMBIGUOUS") return setState({ status: "choose", query, options: data.options as SceneItem[] });
@@ -90,7 +87,7 @@ export function useWayfinding(modelId: string, context: () => WayfindingContext)
       const { response, data } = await post("/api/wayfinding/route", { model_id: modelId, ...context(), start, item_id: item.id, items: [item] }, abort.signal);
       const plan = data.plan as RoutePlan | undefined;
       // Only take a usable route; if re-planning from here fails, keep showing the last one.
-      if (!abort.signal.aborted && response.ok && plan && (plan.status === "OK" || plan.status === "ALREADY_THERE")) {
+      if (!abort.signal.aborted && response.ok && plan && (plan.status === "OK" || plan.status === "ALREADY_THERE") && plan.item.id === item.id) {
         setState((prev) => (prev.status === "ready" && prev.item?.id === item.id ? { ...prev, plan } : prev));
       }
     } catch {
@@ -108,8 +105,8 @@ export function useWayfinding(modelId: string, context: () => WayfindingContext)
     cancel,
     adopt,
     reroute,
-    find: (query: string) => run(query, { query }, true),
-    choose: (item: SceneItem) => run(item.name, { item_id: item.id }, false),
+    find: (query: string) => run(query, { query }),
+    choose: (item: SceneItem) => run(item.name, { item_id: item.id, items: [item] }),
     clear: () => { inflight.current?.abort(); rerouting.current?.abort(); queued.current = null; setState({ status: "idle" }); },
   };
 }

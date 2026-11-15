@@ -1,77 +1,132 @@
-import { createDeepAgent } from "deepagents";
-import { tool } from "langchain";
+import { createAgent, tool } from "langchain";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { z } from "zod";
 import { agentChatModel } from "../chatModel";
 import { flushTraces } from "../tracing";
 import { wayfindingTools, type WayfindingRun } from "../wayfinding/tools";
 import type { WayfindingRequest } from "../wayfinding/agent";
-import { planRouteToItem } from "@/lib/wayfinding/plan";
-import type { WayfindingScene } from "@/lib/wayfinding/types";
-import type { VoiceAction, VoiceMessage, VoiceResult } from "@/lib/voice/types";
+import { planRouteToItem, planToNearest } from "@/lib/wayfinding/plan";
+import type { RoutePlan, SceneItem, WayfindingScene } from "@/lib/wayfinding/types";
+import { isStopCommand, type VoiceAction, type VoiceEvent, type VoiceMessage, type VoiceResult } from "@/lib/voice/types";
 import { guidanceFor } from "@/lib/voice/guidance";
+import { findItem } from "@/lib/wayfinding/locate";
+import { normalize } from "@/lib/search/matchProducts";
+import { isCategoryQuery, matchCategory } from "@/lib/wayfinding/catalogMatch";
 
-const SYSTEM = `You control a 3D store simulation through voice, guiding a blind visitor.
-Use find_item, locate_item and plan_route to ground destinations and directions. Never invent objects, coordinates, distances or turns.
-For a new destination: find_item, optionally locate_item if missing, then plan_route. AMBIGUOUS means ask a short clarification and stop.
-Use read_route for the existing destination. For 'take me there', 'walk', 'go' or 'resume', call start_guidance only after a valid route is available.
-A request to find something only draws the route; it does not start walking without a request to move.
-For 'turn left/right/around', call turn_view. For 'stop', call stop_guidance.
-Moving and turning affect only the on-screen simulation. You cannot assess real-world safety or live obstacles from this stored scan.
-Keep speech brief, at most three sentences. When giving route directions, repeat the planner's text exactly.
-Do not call filesystem, planning or delegation tools. Only the scene tools are relevant.`;
+const SYSTEM = `You control a stored 3D store simulation for a blind visitor. Use only the provided scene tools.
+Never invent or substitute products, coordinates, distances or directions. Keep the current destination unless the visitor requests another.
+Read_position gives heading and measured speed; read_route gives grounded directions. adjust_orientation faces the route or product; set_speed changes simulation walking speed.
+Use find_item and plan_route for a NEW destination only. Never repeat a failed find, locate or plan in the same turn. Ask a short clarification if ambiguous.
+If a new destination is missing from the saved catalog, search the photos once with locate_item before reporting it missing. Never promise an unverified product or silently route to a similar brand.
+Start guidance only after a valid route and an explicit request to move. Finding/showing draws the route without walking.
+Keep replies to two short sentences. This simulation cannot assess real-world obstacles or safety.`;
 
-export async function runVoiceAgent(scene: WayfindingScene, request: WayfindingRequest & {
-  history?: VoiceMessage[]; currentItemId?: string; signal?: AbortSignal; headingDeg?: number;
-}, deps: { model?: NonNullable<Parameters<typeof createDeepAgent>[0]>["model"] } = {}): Promise<VoiceResult> {
+const movingRequest = (query: string) => /\b(?:take|guide|lead|walk|bring|navigate)\s+me\b|\b(?:go|move|head)\s+(?:to|there|ahead)\b|^(?:resume|continue|go|walk|start)(?:\s+(?:walking|moving|guidance|navigation))?[.!?]*$/i.test(query.trim());
+const usable = (plan?: RoutePlan | null): plan is Extract<RoutePlan, { status: "OK" | "ALREADY_THERE" }> => plan?.status === "OK" || plan?.status === "ALREADY_THERE";
+
+type Request = WayfindingRequest & {
+  history?: VoiceMessage[]; currentItemId?: string; signal?: AbortSignal; headingDeg?: number; speedMps?: number; walkingSpeedMps?: number;
+  onEvent?: (event: VoiceEvent) => void;
+  getPosition?: () => Promise<Record<string, unknown> | null>;
+};
+
+/** Catalog matches and navigation controls need no language-model round trips. */
+export async function runVoiceAgent(scene: WayfindingScene, request: Request, deps: { model?: Parameters<typeof createAgent>[0]["model"] } = {}): Promise<VoiceResult> {
   request.signal?.throwIfAborted();
-  const run: WayfindingRun = { scene: { ...scene, items: [...scene.items] }, start: request.start, detections: [], searchPhotos: request.searchPhotos, log: [] };
+  const empty = (reply: string, actions: VoiceAction[] = []): VoiceResult => ({ reply, actions, item: null, plan: null });
+  const query = request.query.trim();
   const current = scene.items.find((item) => item.id === request.currentItemId);
+  const wantsMovement = movingRequest(query);
+  const photoRequest = /\b(?:photos?|pictures?|scan the|look more closely)\b/i.test(query);
+  const stripped = normalize(query.replace(/\b(?:search|look|check)\s+(?:the\s+)?(?:photos?|pictures?)\s*(?:for)?/ig, ""));
+  const destinationQuery = stripped || (photoRequest ? normalize(request.history?.filter((message) => message.role === "user").at(-1)?.content ?? "") : "");
+  if (!destinationQuery) return empty("What would you like to find?");
+  const match = findItem(destinationQuery, scene.items);
+  const candidates = match.status === "MATCH" ? [match.item] : match.status === "AMBIGUOUS" ? match.options
+    : isCategoryQuery(destinationQuery) ? matchCategory(scene.items, destinationQuery) : [];
+  const newDestination = photoRequest || candidates.length > 0 || /\b(?:find|looking for|where (?:is|are|can)|show me|take me to|guide me to|bring me to|navigate me to|lead me to)\b/i.test(query)
+    && !/\b(?:it|there|that|them|same destination|current destination|the way|the route)\b/i.test(query);
+  const routeReply = (item: SceneItem, plan: RoutePlan): VoiceResult => {
+    request.signal?.throwIfAborted();
+    request.onEvent?.({ type: "route", item, plan });
+    if (!usable(plan)) return { reply: `I found ${item.name}, but ${plan.reason}`, item, plan, actions: [] };
+    const position = "position" in request.start ? request.start.position : scene.waypoints.find((w) => w.id === (request.start as { sweepId: string }).sweepId)?.position;
+    const cue = position ? guidanceFor(plan, position, request.headingDeg, request.speedMps) : null;
+    const reply = plan.status === "ALREADY_THERE" ? `You're at ${item.name}.` : cue?.text ?? `${item.name}. ${plan.legs[0]?.text ?? "The route is shown."}`;
+    return { reply: [reply, ...plan.warnings].join(" "), item, plan, actions: wantsMovement ? [{ type: "move" }] : [] };
+  };
+  if (isStopCommand(query)) return empty("Stopped.", [{ type: "stop" }]);
+  const turn = /^(?:please\s+)?(?:turn|look)\s+(left|right|around)[.!?]*$/i.exec(query);
+  if (turn) return empty(`Turning ${turn[1].toLowerCase()}.`, [{ type: "turn", degrees: turn[1].toLowerCase() === "left" ? 90 : turn[1].toLowerCase() === "right" ? -90 : 180 }]);
+  if (/^(?:please\s+)?(?:slow(?:er| down)|speed up|faster|walk slower)[.!?]*$/i.test(query)) {
+    const mps = Math.max(0.4, Math.min(1.8, (request.walkingSpeedMps ?? 1.2) + (/slow/i.test(query) ? -0.3 : 0.3)));
+    return empty(`Walking speed set to ${Math.round(mps * 10) / 10} meters per second.`, [{ type: "speed", metersPerSecond: mps }]);
+  }
+  if (newDestination) {
+    if (candidates.length) {
+      const sameProduct = new Set(candidates.map((item) => normalize(item.name))).size === 1;
+      if (!sameProduct && !isCategoryQuery(destinationQuery)) return empty(`Which do you mean: ${[...new Set(candidates.map((item) => item.name))].slice(0, 4).join(", ")}?`);
+      request.onEvent?.({ type: "progress", stage: "routing", label: "Drawing path" });
+      const nearest = planToNearest(scene, request.start, candidates)!;
+      return routeReply(nearest.item, nearest.plan);
+    }
+    request.onEvent?.({ type: "progress", stage: "locating", label: "Checking scene photos" });
+    const found = await request.searchPhotos?.(destinationQuery);
+    request.signal?.throwIfAborted();
+    if (found?.status !== "OK" || !found.items?.length) return { ...empty(found?.reason ?? `I couldn't verify ${destinationQuery} in this scan.`), resetDestination: true };
+    request.onEvent?.({ type: "progress", stage: "routing", label: "Drawing path" });
+    const nearest = planToNearest(scene, request.start, found.items)!;
+    return routeReply(nearest.item, nearest.plan);
+  }
+  if (wantsMovement || /\b(?:how far|which way|directions|where am i going|current destination|where is it|find it|show me the route)\b/i.test(query)) {
+    if (!current) return empty("What would you like to find?");
+    request.onEvent?.({ type: "progress", stage: "routing", label: "Updating route" });
+    return routeReply(current, planRouteToItem(scene, request.start, current));
+  }
+  if (/\b(?:face|orient|align)\b/i.test(query)) {
+    if (!current) return empty("Choose a destination first.");
+    return empty(/\b(?:product|item|destination)\b/i.test(query) ? `Facing ${current.name}.` : "Facing along the route.", [{ type: "face", target: /\b(?:product|item|destination)\b/i.test(query) ? "destination" : "route" }]);
+  }
+  const run: WayfindingRun = { scene: { ...scene, items: [...scene.items] }, start: request.start, detections: [], log: [],
+    onEvent: request.onEvent, searchPhotos: request.searchPhotos, lockedItemId: current?.id, searchQuery: current ? undefined : destinationQuery };
   if (current) { run.item = current; run.plan = planRouteToItem(scene, request.start, current); }
   const actions: VoiceAction[] = [];
-  let readRoute = false;
+  const emit = (action: Exclude<VoiceAction, { type: "move" | "stop" }> | { type: "stop" }) => {
+    request.signal?.throwIfAborted(); request.onEvent?.({ type: "action", action });
+  };
   const tools: StructuredToolInterface[] = wayfindingTools(run);
-  const ready = () => run.plan?.status === "OK" || run.plan?.status === "ALREADY_THERE";
+  tools.push(tool(async () => JSON.stringify({ start: request.start, heading_deg: request.headingDeg, speed_mps: request.speedMps ?? 0,
+    walking_speed_mps: request.walkingSpeedMps ?? 1.2, ...(await request.getPosition?.()), destination: current ? { id: current.id, name: current.name } : null }),
+  { name: "read_position", description: "Read observed position, model-frame heading, measured speed, and locked destination. Heading zero is +x, positive is left.", schema: z.object({}) }));
   tools.push(tool(async () => {
-    readRoute = true;
     const plan = run.plan;
-    return JSON.stringify(plan && "legs" in plan ? {
-      status: plan.status, item: run.item?.name, directions: plan.legs.map((leg) => leg.text), distance_m: plan.totalDistanceM, warnings: plan.warnings,
-    } : plan ?? { status: "NO_ROUTE" });
-  }, {
-    name: "read_route", description: "Read the current destination and deterministic route from the visitor's latest position.", schema: z.object({}),
+    return JSON.stringify(usable(plan) ? { status: plan.status, item: plan.item.name, directions: plan.legs.map((leg) => leg.text), distance_m: plan.totalDistanceM } : plan ?? { status: "NO_ROUTE" });
+  }, { name: "read_route", description: "Read the existing destination and geometric route. Does not search again.", schema: z.object({}) }));
+  tools.push(tool(async () => {
+    if (!usable(run.plan)) return "NO_ROUTE: ask for a destination.";
+    if (!actions.length) actions.push({ type: "move" });
+    return "Guidance ready.";
+  }, { name: "start_guidance", description: "Start walking only when the visitor explicitly asks to move.", schema: z.object({}) }));
+  tools.push(tool(async () => { actions.length = 0; emit({ type: "stop" }); return "Stopped."; }, { name: "stop_guidance", description: "Stop movement.", schema: z.object({}) }));
+  tools.push(tool(async ({ direction }) => { emit({ type: "turn", degrees: direction === "left" ? 90 : direction === "right" ? -90 : 180 }); return `Turning ${direction}.`; }, {
+    name: "turn_view", description: "Turn the simulated viewpoint when requested.", schema: z.object({ direction: z.enum(["left", "right", "around"]) }),
   }));
-  tools.push(tool(async () => {
-    request.signal?.throwIfAborted();
-    if (!ready()) return "NO_ROUTE: find an item and plan_route first.";
-    if (!actions.some((a) => a.type === "move")) actions.push({ type: "move" });
-    return "Guidance will start along the planned route in the simulation.";
-  }, { name: "start_guidance", description: "Start or resume following the current route, only when the visitor asks to move.", schema: z.object({}) }));
-  tools.push(tool(async () => {
-    request.signal?.throwIfAborted();
-    actions.splice(0, actions.length, { type: "stop" });
-    return "Movement stopped.";
-  }, { name: "stop_guidance", description: "Stop simulation movement and wait.", schema: z.object({}) }));
-  tools.push(tool(async ({ direction }) => {
-    request.signal?.throwIfAborted();
-    actions.splice(0, actions.length, { type: "turn", degrees: direction === "left" ? 90 : direction === "right" ? -90 : 180 });
-    return `Turn ${direction} in the simulation.`;
-  }, { name: "turn_view", description: "Turn the simulated viewpoint left, right or around when requested.", schema: z.object({ direction: z.enum(["left", "right", "around"]) }) }));
-  const agent = createDeepAgent({ model: deps.model ?? agentChatModel({ geminiMaxOutputTokens: 1000, anthropicMaxTokens: 1000 }), tools, systemPrompt: SYSTEM });
+  tools.push(tool(async ({ target }) => { if (!usable(run.plan)) return "NO_ROUTE"; emit({ type: "face", target }); return "Orientation adjusted."; }, {
+    name: "adjust_orientation", description: "Face along the current route, or face its destination. The browser computes the angle from its live position.", schema: z.object({ target: z.enum(["route", "destination"]) }),
+  }));
+  tools.push(tool(async ({ meters_per_second }) => { emit({ type: "speed", metersPerSecond: meters_per_second }); return `Walking speed ${meters_per_second} meters per second.`; }, {
+    name: "set_speed", description: "Set simulated walking speed, when requested.", schema: z.object({ meters_per_second: z.number().min(0.4).max(1.8) }),
+  }));
+  const agent = createAgent({ model: deps.model ?? agentChatModel({ geminiMaxOutputTokens: 700, anthropicMaxTokens: 700 }), tools, systemPrompt: SYSTEM + `\nCurrent destination: ${current ? `${current.name} (${current.id})` : "none"}. Heading: ${request.headingDeg ?? "unknown"}; speed: ${request.speedMps ?? 0} m/s.` });
   try {
-    const result = await agent.invoke({ messages: [...(request.history ?? []), { role: "user", content: request.query }] }, {
-      signal: request.signal, recursionLimit: 18, runName: `voice ${scene.modelId}`, tags: ["storeguide", "voice"],
+    const result = await agent.invoke({ messages: [...(request.history ?? []), { role: "user", content: query }] }, {
+      signal: request.signal, recursionLimit: 10, runName: `voice ${scene.modelId}`, tags: ["storeguide", "voice"],
     });
     request.signal?.throwIfAborted();
-    const changedRoute = run.log.some((entry) => entry.event === "plan_route");
     const last = result.messages.at(-1)?.content;
     const text = typeof last === "string" ? last : Array.isArray(last) ? last.map((part) => typeof part === "object" && part && "text" in part ? String(part.text) : "").join("") : "";
-    // Navigation speech is always generated by the planner, not model-estimated turns or distances.
-    const position = "position" in request.start ? request.start.position : scene.waypoints.find((w) => w.id === (request.start as { sweepId: string }).sweepId)?.position;
-    const cue = run.plan && position && request.headingDeg !== undefined ? guidanceFor(run.plan, position, request.headingDeg) : null;
-    const reply = (changedRoute || readRoute) && ready() && run.plan && "legs" in run.plan
-      ? cue ? [cue.text, ...run.plan.warnings].join(" ") : [run.plan.status === "ALREADY_THERE" ? `You're at ${run.item?.name}.` : `${run.item?.name}.`, ...run.plan.legs.slice(0, 2).map((leg) => leg.text), ...run.plan.warnings].filter(Boolean).join(" ")
-      : text.trim() || "Please tell me what you want to find.";
-    return { reply: reply.slice(0, 2000), actions, item: run.item ?? null, plan: changedRoute || actions.some((a) => a.type === "move") ? run.plan ?? null : null };
+    if (run.item && run.plan && run.log.some((entry) => entry.event === "plan_route")) return routeReply(run.item, run.plan);
+    // An LLM cannot start movement from an incidental conversation/tool call.
+    return { reply: text.trim().slice(0, 2000) || "What would you like to find?", actions: wantsMovement ? actions : [], item: run.item ?? null, plan: null };
   } finally { await flushTraces(); }
 }

@@ -125,7 +125,7 @@ export async function buildCatalog(scene: WayfindingScene): Promise<SceneItem[]>
   return items;
 }
 
-const catalogs = new Map<string, { at: number; ttl: number; value: Promise<SceneItem[]> }>();
+const catalogs = new Map<string, { at: number; ttl: number; build: boolean; value: Promise<SceneItem[]> }>();
 const TTL_MS = 7 * 24 * 60 * 60_000;
 /** An empty or failed build (e.g. the AI quota ran out) is not retried for this long, so it doesn't burn quota. */
 const RETRY_MS = 10 * 60_000;
@@ -148,14 +148,16 @@ async function fromDisk(modelId: string): Promise<SceneItem[] | null> {
 }
 
 /** The scan's catalogue: from memory, else from disk, else built (cached for a week; empty builds retried after 10 min). */
-export function sceneCatalog(scene: WayfindingScene): Promise<SceneItem[]> {
-  if (!scene.surfaces?.length || !/^[a-zA-Z0-9]{11}$/.test(scene.modelId)) return Promise.resolve([]);
+export function sceneCatalog(scene: WayfindingScene, options: { build?: boolean } = {}): Promise<SceneItem[]> {
+  if (!/^[a-zA-Z0-9]{11}$/.test(scene.modelId)) return Promise.resolve([]);
   const hit = catalogs.get(scene.modelId);
-  if (hit && Date.now() - hit.at < hit.ttl) return hit.value;
-  const entry = { at: Date.now(), ttl: TTL_MS, value: Promise.resolve([] as SceneItem[]) };
+  if (hit && Date.now() - hit.at < hit.ttl && (!options.build || hit.build)) return hit.value;
+  const entry = { at: Date.now(), ttl: TTL_MS, build: Boolean(options.build), value: Promise.resolve([] as SceneItem[]) };
   entry.value = (async () => {
     const saved = await fromDisk(scene.modelId);
     if (saved) return saved;
+    // Interactive requests never kick off an expensive full-store indexing job.
+    if (!options.build) { entry.ttl = RETRY_MS; return []; }
     if (!aiConfigured()) { entry.ttl = RETRY_MS; return []; }
     const items = await buildCatalog(scene).catch((error: unknown) => { console.warn("catalog: build failed", error); return []; });
     if (!items.length) { entry.ttl = RETRY_MS; return items; }

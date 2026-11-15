@@ -134,10 +134,16 @@
   .voice-footer { position: fixed; bottom: 12px; left: 12px; z-index: 20; }
   .voice-settings { animation-duration: var(--duration-normal); }
   .voice-wave { width: 100%; max-width: 260px; }
+  .voice-activity { position: relative; display: grid; place-items: center; width: 100%; min-height: 120px; }
+  .voice-activity[data-working="true"] .voice-wave { opacity: 0.12; }
+  .voice-working { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; font-size: 12px; color: var(--muted-foreground); }
+  .voice-progress-ring { width: 36px; height: 36px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: voice-progress 800ms linear infinite; }
   .voice-wave svg { display: block; width: 100%; height: auto; }
   .voice-wave rect { fill: var(--primary); opacity: 0.7; transform-box: fill-box; transform-origin: center; }
   .voice-wave rect:nth-child(3n) { fill: var(--chart-3); opacity: 1; }
   .voice-wave[data-active="false"] rect { fill: var(--chart-3); opacity: 0.6; }
+  .voice-wave[data-mode="stopped"] rect { fill: var(--muted-foreground); opacity: 0.45; }
+  .voice-wave rect { transition: fill var(--duration-fast), opacity var(--duration-fast); }
   .voice-level { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); }
   .voice-connection { display: flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
   .voice-connection-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--muted-foreground); transition: background-color var(--duration-fast); }
@@ -153,6 +159,7 @@
 }
 
 @keyframes panel-enter { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes voice-progress { to { transform: rotate(360deg); } }
 
 @media (max-width: 767px) {
   .workspace-body { height: auto; min-height: 100svh; grid-template-columns: minmax(0, 1fr); }

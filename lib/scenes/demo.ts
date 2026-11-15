@@ -1,5 +1,4 @@
-// Demo scans the app serves without a row in the `stores` table (the hackathon's sample models). Everything else must
-// be registered to a property first.
+// Local registry of supported scans. Add a model id and display name here to serve another scene.
 export const DEMO_SCENES = {
   /** J&B Food Market, Houston: the scan Mann's walkthrough (jb_store/) was built on. The home page opens it. */
   UzwrJ9TbQuG: "J&B Food Market",

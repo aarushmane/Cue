@@ -51,7 +51,10 @@ const singularWords = (q: string) => normalize(q).split(" ").map((w) => (w.lengt
 
 /** True when the question names a kind of product ("chips", "something to drink") rather than a brand. */
 export function isCategoryQuery(query: string): boolean {
-  return singularWords(query).some((w) => w in CATEGORY_WORDS);
+  const vocabulary = new Set(Object.entries(CATEGORY_WORDS).flatMap(([key, values]) => singularWords([key, ...values].join(" "))));
+  ["barbecue", "bbq", "hot", "steak", "soft", "potato", "tortilla", "instant", "something", "any"].forEach((word) => vocabulary.add(word));
+  const words = singularWords(query).filter(Boolean);
+  return words.length > 0 && words.every((word) => vocabulary.has(word)) && words.some((word) => word in CATEGORY_WORDS);
 }
 
 /**
@@ -95,7 +98,7 @@ export function matchCatalog(items: SceneItem[], query: string): SceneItem[] {
       if (nc.length < 2) continue;
       if (nc === qc || singular(nc) === singular(qc)) best = Math.max(best, 3);
       else if (qc.length >= 3 && nc.includes(qc)) best = Math.max(best, 2.5);
-      else if (i === 0 && nc.length >= 3 && qc.includes(nc)) best = Math.max(best, 2);
+      else if (i === 0 && nc.length >= 2 && (` ${q} `).includes(` ${n} `)) best = Math.max(best, 2);
     }
     return best;
   };

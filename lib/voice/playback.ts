@@ -1,3 +1,5 @@
+import { voiceSocket } from "./socket";
+
 /** Decode streamed little-endian PCM16 without waiting for an entire utterance to download. */
 export function pcmFloats(bytes: Uint8Array): Float32Array<ArrayBuffer> {
   const data = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -24,15 +26,13 @@ export async function playSpeech(text: string, context: AudioContext, signal: Ab
   };
   signal.addEventListener("abort", silence, { once: true });
   try {
-    const response = await fetch("/api/voice/speech", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text,
+    const audio = await voiceSocket.speech({ text,
       ...(preferences?.voiceId ? { voice_id: preferences.voiceId } : {}), speed: preferences?.speed ?? 1,
-    }), signal });
-    if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || "Could not play the voice response.");
-    if (!response.body) throw new Error("The voice response was empty.");
+    }, signal);
     signal.throwIfAborted();
     onOutput(analyser);
     await context.resume();
-    reader = response.body.getReader();
+    reader = audio.getReader();
     let tail = new Uint8Array(0);
     let at = context.currentTime + 0.06;
     const drained = new Promise<void>((resolve) => { finish = resolve; });

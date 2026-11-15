@@ -1,111 +1,58 @@
 # StoreGuide Python backend
 
-Read-only FastAPI server alongside the existing Next.js app. Initialized with
-`uv init --app`; Python 3.12 is pinned in `.python-version`. Dependencies live in
-`pyproject.toml`, including the default `dev` group for Ruff.
+FastAPI owns the voice WebSocket and scene drawing placeholders. Next serves the React interface, scan assets and geometric route planner. Scene registration and product catalogs are local files; no database is required.
 
-## Start
+## Run
 
 From the repository root:
 
 ```sh
+uv sync --project backend
+npm run dev
+```
+
+The frontend runs on port 3000 and the backend on port 8000. The dev launcher reuses a running StoreGuide backend. To run only the backend:
+
+```sh
 cd backend
-uv sync
 uv run uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-`uv sync` installs dependencies, creates/updates `uv.lock`, and manages `.venv`.
-Commit the generated `uv.lock` for repeatable installs.
-
-Interactive API docs: http://127.0.0.1:8000/docs
-OpenAPI schema: http://127.0.0.1:8000/openapi.json
-
-Run the frontend separately with `npm run dev` from the repository root.
-The frontend currently continues to use its existing Next.js routes; adding this
-server does not automatically redirect those requests to Python.
+Python 3.12 is pinned in `.python-version`; `uv.lock` records dependencies.
 
 ## Configuration
 
-Reads the repository's `.env`, then `.env.local`; process environment variables
-take priority. No need to duplicate the existing Supabase configuration:
+Settings read the repository's `.env`, then `.env.local`. Process environment takes precedence.
 
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `ELEVENLABS_API_KEY`: speech and realtime transcription setup.
+- `ELEVENLABS_VOICE_ID`: optional output voice; defaults to George.
+- `ELEVENLABS_TTS_MODEL`: defaults to `eleven_flash_v2_5`.
+- `BACKEND_CORS_ORIGINS`: allowed browser origins; defaults to localhost and 127.0.0.1 on port 3000.
+- `SCENE_SERVER_URL`: Next's scene service; defaults to `http://127.0.0.1:3000`.
+- `NEXT_PUBLIC_BACKEND_URL`: browser backend origin; defaults to the current hostname on port 8000. Production needs a reachable secure WebSocket URL.
 
-Optional overrides: `SUPABASE_URL` and `SUPABASE_ANON_KEY`. Leave these unset if
-reusing the frontend values. The public key can be a legacy anon JWT or a newer
-publishable key. `SUPABASE_SERVICE_ROLE_KEY` is never used by this server.
+The scene agent uses the Gemini or Anthropic key configured for Next.
 
-`BACKEND_CORS_ORIGINS` is a comma-separated list; its default allows
-`http://localhost:3000` and `http://127.0.0.1:3000` to make GET requests.
-
-Without Supabase settings, `/health` and `/docs` work; database routes and
-`/health/ready` return 503. Public Supabase grants and RLS policies must allow the
-requested reads. Inaccessible rows appear as empty lists or 404, as dictated by
-Supabase. This server does not change database permissions or run migrations.
-
-The database adapter uses HTTPX to make GET requests to Supabase's existing
-PostgREST Data API. It does not need a separate database connection string.
-
-## Initial routes
-
-All routes below use GET. IDs are the existing text IDs, except `property_id`,
-which is the numeric CoStar identifier used by the existing scene viewer.
+## Routes
 
 | Route | Purpose |
 | --- | --- |
-| `/health` | Process liveness, without a database request |
-| `/health/ready` | Check configuration and a small Supabase read |
-| `/api/stores` | List stores; optional `q` searches names |
-| `/api/stores/{store_id}` | Store details and external scan identifiers |
-| `/api/properties/{property_id}` | Newest saved property-to-Matterport mapping |
-| `/api/stores/{store_id}/maps` | Published maps for a store |
-| `/api/maps/{map_id}` | Published map metadata |
-| `/api/maps/{map_id}/nodes` | Map navigation nodes |
-| `/api/maps/{map_id}/edges` | Connections between nodes |
-| `/api/maps/{map_id}/shelves` | Shelf geometry and aisle/section labels |
-| `/api/stores/{store_id}/products` | Publicly visible products; optional name search `q` |
-| `/api/products/{product_id}` | Product details |
-| `/api/products/{product_id}/location` | Current published shelf location |
+| `GET /health` | Process liveness |
+| `GET /health/ready` | Local voice configuration, without provider requests |
+| `WS /ws/voice` | Voice setup, settings, scene commands, speech and cancellation |
+| `WS /ws/scenes/{scene_id}/draw` | Drawing placeholder: not implemented |
+| `GET /api/scenes/{scene_id}/draw/demo` | Drawing placeholder: HTTP 501 |
 
-List routes accept `limit` (default 50, maximum 200) and `offset` (default 0).
-Responses have the shape `{ "items": [...], "limit": 50, "offset": 0 }`.
-Ordering is deterministic. Increase offset by the number of returned items until
-an empty page to read a complete collection, including large maps.
+Interactive docs: http://127.0.0.1:8000/docs.
 
-For example:
+## Voice protocol
 
-```sh
-curl 'http://127.0.0.1:8000/api/stores?limit=10&offset=0'
-curl 'http://127.0.0.1:8000/api/properties/236314'
-curl 'http://127.0.0.1:8000/api/stores/STORE_ID/products?q=milk'
-```
+JSON commands have an `id`, `type` (`token`, `voices`, `speak`, `turn`, `state`, or `cancel`), and `payload`. Replies use the same id. Speech binary frames contain a four-byte little-endian request id followed by 24 kHz PCM16; a `done` message ends the stream.
 
-Missing resources return 404, invalid query parameters return 422, and unavailable
-database access returns a sanitized 503. Map routes explicitly require published
-maps; product visibility additionally depends on the existing public RLS policy.
+The shared async HTTP client reuses provider connections. Cancellation stops the associated task and upstream stream; disconnecting cancels all session tasks. Credentials stay on the backend. Socket origins are checked against `BACKEND_CORS_ORIGINS`.
 
-Authentication and agent endpoints are deferred. Private staff membership, media,
-observations, audit events, reports, navigation sessions, and inventory suggestions
-have no endpoints in this initial public API. Next.js hosts the Showcase embed,
-property lookup, and the existing token-protected property write.
+Scene commands delegate to `SCENE_SERVER_URL/api/wayfinding/voice`; geometry is not duplicated in Python. Browser audio and movement stop immediately before the socket round trip.
 
-## Scene drawing placeholders
+Keep verification lightweight, following `AGENTS.md`. Ruff is available through `uv run ruff check .` from `backend/`.
 
-- WebSocket `/ws/scenes/{scene_id}/draw`: sends `not_implemented` and closes.
-- GET `/api/scenes/{scene_id}/draw/demo`: returns HTTP 501.
-
-Both routes are placeholders with TODOs for future implementation.
-
-## Development
-
-Run from `backend/`:
-
-```sh
-uv run ruff check .
-uv run ruff format --check .
-```
-
-Add dependencies with `uv add PACKAGE`, or development tools with
-`uv add --dev PACKAGE`. After the initial lockfile exists, `uv sync --locked`
-reproduces the resolved environment.
+`state` updates carry current pose, normalized heading, measured speed and destination ID over the same socket at 4 Hz. They do not invoke reasoning or count toward command rate limits. Active state is ephemeral and removed on socket close. The scene agent reads it through an unguessable `/voice/state/{session_id}` connection handle. Use one worker initially; shared state or sticky routing is needed when scaling across workers.

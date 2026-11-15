@@ -4,14 +4,18 @@ import type { Product } from "./types";
 const FILLER = [
   "where can i find", "where do i find", "where is", "where are", "can you find", "help me find", "i am looking for",
   "i'm looking for", "im looking for", "looking for", "i need", "i want", "find me", "find", "get me", "take me to",
+  "can you find me", "could you find me", "can you show me", "show me",
+  "guide me to", "walk me to", "navigate me to", "bring me to", "lead me to", "go to", "head to",
+  "can you take me to", "can you guide me to", "could you take me to",
   "some", "a", "an", "the", "please",
-];
+].sort((a, b) => b.length - a.length);
 
 export function normalize(text: string): string {
   let s = ` ${text.toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "")} `;
+  s = s.replace(/\ba[\s.-]*(?:1|one)\b/g, "a1");
   s = s.replace(/[’']/g, "").replace(/[^a-z0-9%]+/g, " ");
   // Longest phrases first so "where can i find" wins over "find".
-  for (const f of [...FILLER].sort((a, b) => b.length - a.length)) {
+  for (const f of FILLER) {
     s = s.replaceAll(` ${f} `, " ");
   }
   return s.trim().replace(/\s+/g, " ");

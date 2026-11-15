@@ -1,7 +1,6 @@
 // Request parsing shared by the wayfinding API routes. Server only.
 import "server-only";
 import { z } from "zod";
-import { getDb } from "../db/client";
 import { isDemoScene } from "../scenes/demo";
 import { loadScene, ObstacleInput, SceneItemInput } from "./scene";
 import type { StartPoint, Waypoint, WayfindingScene } from "./types";
@@ -19,6 +18,7 @@ export const WayfindingBody = z.object({
   model_id: z.string().regex(/^[a-zA-Z0-9]{11}$/),
   query: z.string().min(1).max(300).optional(),
   item_id: z.string().max(100).optional(),
+  search_photos: z.boolean().default(false),
   /**
    * Where the visitor is: the current Showcase sweep and/or a model-frame position (the sweep wins when it is a
    * known scan point). Omit it to start from the tour's first scan point.
@@ -68,12 +68,9 @@ export const toOptions = (o: WayfindingBody["options"]) => ({
   clearanceM: o.clearance_m, maxApproachM: o.max_approach_m, arrowSpacingM: o.arrow_spacing_m, smooth: o.smooth,
 });
 
-/** Only scans registered to a property are served (same rule as the tour pages). */
+/** Only scans in the local registry are served (same rule as the scene pages). */
 export async function assertRegistered(modelId: string) {
-  if (isDemoScene(modelId)) return;
-  const registered = await getDb("read").from("stores").select("id").eq("matterport_model_id", modelId).limit(1);
-  if (registered.error) throw new HttpError(503, "Could not look up the saved scene.");
-  if (!registered.data?.length) throw new HttpError(404, "Add this model to a property before routing in it.");
+  if (!isDemoScene(modelId)) throw new HttpError(404, "Add this model to lib/scenes/demo.ts before opening it.");
 }
 
 export async function sceneFor(body: WayfindingBody) {

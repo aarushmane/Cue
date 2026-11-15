@@ -43,27 +43,26 @@ export function RouteOverlay({ sdk, plan }: { sdk: MpSdk; plan: OkPlan }) {
         run.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
         ctx.globalAlpha = 0.35;
         ctx.strokeStyle = color;
-        ctx.lineWidth = 10;
+        ctx.lineWidth = 6;
         ctx.stroke();
       }
       ctx.globalAlpha = 1;
 
       // Chevrons, nearest last so they draw on top.
       for (const a of projectArrows(plan.arrows, project, size).sort((x, y) => x.sizePx - y.sizePx)) {
-        const s = Math.max(10, Math.min(a.sizePx, 64));
+        const s = Math.max(10, Math.min(a.sizePx, 36));
         ctx.save();
         ctx.translate(a.x, a.y);
         ctx.rotate(a.angleRad);
         ctx.beginPath();
-        ctx.moveTo(s * 0.5, 0);
-        ctx.lineTo(-s * 0.4, -s * 0.42);
-        ctx.lineTo(-s * 0.15, 0);
-        ctx.lineTo(-s * 0.4, s * 0.42);
-        ctx.closePath();
-        ctx.fillStyle = color;
+        ctx.moveTo(-s * 0.2, -s * 0.35);
+        ctx.lineTo(s * 0.2, 0);
+        ctx.lineTo(-s * 0.2, s * 0.35);
         ctx.strokeStyle = ink;
-        ctx.lineWidth = 1.5;
-        ctx.fill();
+        ctx.lineWidth = 7;
+        ctx.stroke();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 4;
         ctx.stroke();
         ctx.restore();
       }

@@ -1,14 +1,12 @@
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 
 from app.config import Settings
-from app.database import DatabaseUnavailable, ReadDatabase, get_database
 from app.drawings import router as drawing_router
-from app.routes import router
+from app.voice import router as voice_router
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -16,34 +14,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        app.state.database = None
-        if settings.database_configured:
-            key = settings.supabase_anon_key.get_secret_value().strip()
-            headers = {"apikey": key, "Accept": "application/json"}
-            # Legacy anon keys are JWTs. Publishable keys belong only in apikey.
-            if not key.startswith("sb_publishable_"):
-                headers["Authorization"] = f"Bearer {key}"
-            with httpx.Client(
-                base_url=f"{settings.supabase_url.strip().rstrip('/')}/rest/v1/",
-                headers=headers,
-                timeout=10.0,
-                follow_redirects=False,
-            ) as client:
-                app.state.database = ReadDatabase(client)
-                try:
-                    yield
-                finally:
-                    app.state.database = None
-        else:
+        app.state.settings = settings
+        async with httpx.AsyncClient(timeout=45, follow_redirects=False) as client:
+            app.state.voice_http = client
             yield
 
     app = FastAPI(
         title="StoreGuide API",
         version="0.1.0",
-        description=(
-            "Public database reads and scene drawing placeholders. "
-            "No authentication or agent endpoints."
-        ),
+        description=("Cancellable voice WebSocket and scene drawing placeholders."),
         lifespan=lifespan,
     )
     app.add_middleware(
@@ -55,23 +34,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_methods=["GET"],
     )
 
-    @app.exception_handler(DatabaseUnavailable)
-    async def database_error(_request: Request, _error: DatabaseUnavailable):
-        return JSONResponse(status_code=503, content={"detail": "Database read unavailable"})
-
     @app.get("/health", tags=["Health"])
     def health() -> dict[str, str]:
-        """Process liveness; this does not contact Supabase."""
-        return {"status": "ok"}
+        """Process liveness without external requests."""
+        return {"status": "ok", "service": "storeguide"}
 
     @app.get("/health/ready", tags=["Health"])
-    def ready(request: Request) -> dict[str, str]:
-        """Readiness includes a small public Supabase read."""
-        get_database(request).select("stores", "id")
-        return {"status": "ready", "database": "ok"}
+    def ready() -> dict[str, str]:
+        """Report local voice configuration without contacting the provider."""
+        voice = (
+            "configured"
+            if settings.elevenlabs_api_key.get_secret_value().strip()
+            else "not_configured"
+        )
+        return {"status": "ready", "voice": voice}
 
-    app.include_router(router)
     app.include_router(drawing_router)
+    app.include_router(voice_router)
     return app
 
 

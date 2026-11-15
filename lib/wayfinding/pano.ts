@@ -91,7 +91,7 @@ export function ribbon(polyline: Vec3[], halfWidthM: number, lift = 0.01): Vec3[
 }
 
 /** A chevron lying on the floor at `p`, pointing along `headingDeg`. */
-export function floorChevron(p: Vec3, headingDeg: number, sizeM = 0.32, lift = 0.015): Vec3[] {
+export function floorChevron(p: Vec3, headingDeg: number, sizeM = 0.24, lift = 0.015): Vec3[] {
   const h = headingDeg * RAD;
   const f = v3(Math.cos(h), Math.sin(h), 0), l = v3(-Math.sin(h), Math.cos(h), 0);
   const at = (fw: number, lt: number) => v3(p.x + (f.x * fw + l.x * lt) * sizeM, p.y + (f.y * fw + l.y * lt) * sizeM, p.z + lift);
@@ -129,7 +129,7 @@ export function floorPath(polyline: Vec3[], item: Vec3, stopShortM = 0.45): Vec3
 }
 
 /** Chevron positions every `spacingM` along a floor path, starting `startM` in, each pointing along the path. */
-export function chevronsAlong(path: Vec3[], spacingM = 0.8, startM = 0.6): { position: Vec3; headingDeg: number }[] {
+export function chevronsAlong(path: Vec3[], spacingM = 1, startM = 0.6): { position: Vec3; headingDeg: number }[] {
   const out: { position: Vec3; headingDeg: number }[] = [];
   let walked = 0, next = startM;
   for (let i = 0; i < path.length - 1; i++) {

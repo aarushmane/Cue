@@ -9,9 +9,9 @@ import { structuredVision } from "../ai/structured";
 import { aiConfigured } from "../ai/provider";
 import { normalize } from "../search/matchProducts";
 import sharp from "sharp";
-import { isCategoryQuery, matchCatalog, matchCategory, sceneCatalog } from "./catalog";
+import { isCategoryQuery, matchCategory, sceneCatalog } from "./catalog";
 import { skyboxTemplates } from "./scene";
-import { locateFromDetections, surfaceClusters, type Detection } from "./locate";
+import { findItem, locateFromDetections, surfaceClusters, type Detection } from "./locate";
 import type { SceneItem, WayfindingScene } from "./types";
 
 const MAX_SWEEPS = 12;
@@ -118,7 +118,7 @@ export type VisionFind =
     }
   | { status: "NOT_SEEN" | "UNAVAILABLE"; reason: string; detections: number; rejected?: { actually: string }[] };
 
-const cache = new Map<string, { at: number; value: Promise<VisionFind> }>();
+const cache = new Map<string, { at: number; ttl: number; value: Promise<VisionFind> }>();
 const TTL_MS = 30 * 60_000;
 const MAX_CANDIDATES = 4;
 
@@ -132,15 +132,16 @@ export function findInPhotos(scene: WayfindingScene, query: string): Promise<Vis
   const what = normalize(query) || query.trim().toLowerCase();
   const key = `${scene.modelId}:${what}`;
   const hit = cache.get(key);
-  if (hit && Date.now() - hit.at < TTL_MS) return hit.value;
+  if (hit && Date.now() - hit.at < hit.ttl) return hit.value;
   const name = what.charAt(0).toUpperCase() + what.slice(1);
   const value = (async (): Promise<VisionFind> => {
     // Brands, products and categories: answer from the scan's catalogue (read once from zoomed-in photo tiles).
     const catalog = await sceneCatalog(scene).catch(() => [] as SceneItem[]);
     // A kind of product ("chips") means every place of that kind; a brand or product means its places.
-    const [first, second] = isCategoryQuery(query) ? [matchCategory, matchCatalog] : [matchCatalog, matchCategory];
-    const listed = first(catalog, query);
-    const found = listed.length ? listed : second(catalog, query);
+    const category = isCategoryQuery(query);
+    const match = findItem(query, catalog);
+    const listed = match.status === "MATCH" ? [match.item] : match.status === "AMBIGUOUS" ? match.options : [];
+    const found = listed.length ? listed : category ? matchCategory(catalog, query) : [];
     if (found.length) return { status: "OK", items: found, detections: found.length, rejected: [] };
     if (!aiConfigured()) return { status: "UNAVAILABLE", reason: "No AI provider is configured to search the photos.", detections: 0 };
 
@@ -148,6 +149,7 @@ export function findInPhotos(scene: WayfindingScene, query: string): Promise<Vis
     if (!detections.length) return { status: "NOT_SEEN", reason: `No ${what} was spotted in this scan's photos.`, detections: 0 };
 
     if (!scene.surfaces?.length) {
+      if (!category) return { status: "UNAVAILABLE", reason: `I can't verify the exact product ${what} in this scan.`, detections: detections.length };
       // No mesh: fall back to triangulation / fixtures, unverified.
       const located = locateFromDetections(scene.waypoints, detections, scene.obstacles);
       if (located.status !== "OK") return { status: "NOT_SEEN", reason: located.reason, detections: detections.length };
@@ -162,17 +164,18 @@ export function findInPhotos(scene: WayfindingScene, query: string): Promise<Vis
     }));
     const rejected = checked.filter((c) => c.verdict && !c.verdict.ok).map((c) => ({ actually: c.verdict!.actually }));
     const items = checked
-      .filter((c) => !c.verdict || c.verdict.ok)
+      .filter((c) => c.verdict?.ok || (category && !c.verdict))
       .map(({ place, verdict }, i): SceneItem => ({
         id: `vision:${what}:${i}`, name, position: place.position, source: "vision",
         confidence: verdict ? place.confidence : Math.round(place.confidence * 50) / 100,
       }));
     if (!items.length) {
-      return { status: "NOT_SEEN", reason: `What looked like ${what} turned out to be ${rejected.map((r) => r.actually).join(", ")}.`, detections: detections.length, rejected };
+      return { status: "NOT_SEEN", reason: rejected.length ? `What looked like ${what} turned out to be ${rejected.map((r) => r.actually).join(", ")}.` : `I couldn't verify ${what} in this scan.`, detections: detections.length, rejected };
     }
     return { status: "OK", items, detections: detections.length, rejected };
   })();
-  cache.set(key, { at: Date.now(), value });
-  value.then((v) => { if (v.status !== "OK") cache.delete(key); }, () => cache.delete(key));
+  const entry = { at: Date.now(), ttl: TTL_MS, value };
+  cache.set(key, entry);
+  value.then((v) => { if (v.status !== "OK") entry.ttl = 2 * 60_000; }, () => cache.delete(key));
   return value;
 }

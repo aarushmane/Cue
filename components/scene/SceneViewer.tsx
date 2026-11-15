@@ -9,7 +9,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Separator } from "@/components/ui/separator";
 import { Logo } from "@/components/workspace/Logo";
 import { VoicePanel } from "@/components/workspace/VoicePanel";
-import type { ViewControls, VoiceResult } from "@/lib/voice/types";
+import { wrapHeading, type ViewControls, type VoiceResult, type ViewPose } from "@/lib/voice/types";
 import { guidanceFor } from "@/lib/voice/guidance";
 import { lookAhead } from "@/lib/wayfinding/screen";
 import { RouteMap } from "./RouteMap";
@@ -18,7 +18,7 @@ import { SimViewer } from "@/components/sim/SimViewer";
 import type { Vec3 } from "@/lib/wayfinding/types";
 import { aboutSteps } from "@/lib/wayfinding/steps";
 import { RouteOverlay } from "./RouteOverlay";
-import { connectShowcase, headingDegrees, SDK_KEY, stepAlong, toApi, watchSweeps, type ClientWaypoint, type Pose } from "./showcase";
+import { connectShowcase, headingDegrees, SDK_KEY, stepAlong, toApi, toSdk, watchSweeps, type ClientWaypoint, type Pose } from "./showcase";
 import { useWayfinding } from "./useWayfinding";
 
 /**
@@ -48,6 +48,7 @@ export function SceneViewer({ modelId, name }: { modelId: string; name: string }
   const viewport = useRef<HTMLElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
   const pose = useRef<Pose | null>(null);
+  const velocity = useRef({ mps: 0, at: 0 });
   const [status, setStatus] = useState<"loading" | "ready">("loading");
   const [session, setSession] = useState(0);
   const [fullscreen, setFullscreen] = useState(false);
@@ -73,7 +74,10 @@ export function SceneViewer({ modelId, name }: { modelId: string; name: string }
 
   const sweeps = useRef<ClientWaypoint[]>([]);
   const context = useCallback(() => {
-    if (sim) return { start: simFloor.current ? { position: simFloor.current } : {} };
+    if (sim) {
+      const position = viewControl.current?.pose?.()?.position ?? simFloor.current;
+      return { start: position ? { position } : {} };
+    }
     if (pano) return { start: sweepId ? { sweep_id: sweepId } : {} };
     const current = pose.current;
     if (!sdk || !current) return { start: {} };
@@ -111,7 +115,9 @@ export function SceneViewer({ modelId, name }: { modelId: string; name: string }
   }, []);
   const onSimPosition = useCallback((floor: Vec3) => {
     simFloor.current = floor;
-    void reroute({ position: floor }); // walking re-plans the route from where the visitor stopped
+    // Guidance already follows a fixed obstacle-checked path. Replanning each step
+    // can change its approach point while the visitor is still following it.
+    if (!viewControl.current?.moving()) void reroute({ position: floor });
   }, [reroute]);
   const onSimUnavailable = useCallback((reason: string) => {
     console.warn("3D walk unavailable, using the 360° photos:", reason);
@@ -135,7 +141,15 @@ export function SceneViewer({ modelId, name }: { modelId: string; name: string }
     let cancel = () => {};
     connectShowcase(frame.current).then((connected) => {
       if (!live) return connected.disconnect();
-      const sub = connected.Camera.pose.subscribe((next) => { pose.current = next; });
+      const sub = connected.Camera.pose.subscribe((next) => {
+        const now = performance.now();
+        const previous = pose.current;
+        const dt = (now - velocity.current.at) / 1000;
+        const p = toApi(connected, next.position);
+        const before = previous ? toApi(connected, previous.position) : p;
+        velocity.current = { at: now, mps: previous && dt > 0.01 && dt < 1 ? Math.hypot(p.x - before.x, p.y - before.y) / dt : 0 };
+        pose.current = next;
+      });
       const sweepSub = watchSweeps(connected, (next) => { sweeps.current = next; });
       cancel = () => { sub.cancel(); sweepSub.cancel(); connected.disconnect(); };
       setSdk(connected);
@@ -234,7 +248,12 @@ export function SceneViewer({ modelId, name }: { modelId: string; name: string }
   }
 
   function applyVoice(result: VoiceResult) {
+    if (result.resetDestination) { currentRoute.current = { status: "idle" }; wayfinding.clear(); }
+    if (result.plan && "item" in result.plan && result.item && result.item.id !== result.plan.item.id) {
+      stopMovement(); setToolError("Destination changed unexpectedly. Please search again."); return;
+    }
     if (result.plan) {
+      currentRoute.current = { status: "ready", query: result.item?.name ?? query, reply: result.reply, item: result.item, plan: result.plan };
       wayfinding.adopt(result.item?.name ?? query, result.reply, result.item, result.plan);
       setQuery(result.item?.name ?? query);
       setFolded(false);
@@ -250,11 +269,29 @@ export function SceneViewer({ modelId, name }: { modelId: string; name: string }
           void sdk.Camera.rotate(-action.degrees, 0).catch(() => { if (!move.signal.aborted) setToolError("Could not turn the view."); })
             .finally(() => { if (motion.current === move) motion.current = null; });
         } else setToolError("Turning needs the 3D viewer or a connected Matterport SDK.");
-      } else {
+      } else if (action.type === "speed") {
+        if (viewControl.current?.speed) viewControl.current.speed(action.metersPerSecond);
+        else setToolError("Walking speed is available in the 3D simulation.");
+      } else if (action.type === "face") {
+        const route = result.plan ?? (currentRoute.current.status === "ready" ? currentRoute.current.plan : null);
+        if (!route || !("item" in route)) continue;
+        const position = viewControl.current?.pose?.()?.position ?? simFloor.current;
+        const target = action.target === "destination" || !position ? route.item.position : lookAhead(route.polyline, position, 1.2);
+        if (viewControl.current?.face) viewControl.current.face(target);
+        else if (sdk) void sdk.Camera.lookAt(toSdk(sdk, target)).catch(() => setToolError("Could not orient the view."));
+      } else if (action.type === "move") {
         const nextPlan = result.plan ?? plan;
         if (nextPlan?.status === "OK" || nextPlan?.status === "ALREADY_THERE") void guideRoute(nextPlan);
       }
     }
+  }
+
+  function livePose(): ViewPose | null {
+    const local = viewControl.current?.pose?.();
+    if (local) return local;
+    if (!sdk || !pose.current) return null;
+    return { position: toApi(sdk, pose.current.position), headingDeg: wrapHeading(headingDegrees(sdk, pose.current)),
+      speedMps: performance.now() - velocity.current.at < 500 ? velocity.current.mps : 0, moving: Boolean(motion.current) };
   }
 
   const s = wayfinding.state;
@@ -356,7 +393,7 @@ export function SceneViewer({ modelId, name }: { modelId: string; name: string }
       {toolError && <p role="alert" className="absolute right-4 bottom-4 left-4 m-0 w-fit max-w-sm rounded-md bg-popover p-3 text-body text-destructive">{toolError}</p>}
           </section>
         </main>
-        <VoicePanel interruptRef={interruptVoice} search={<>
+        <VoicePanel interruptRef={interruptVoice} activity={s.status === "loading" ? "Finding destination" : null} search={<>
           <Logo />
           <form onSubmit={submit} className="destination-search" role="search" aria-label="Search the map">
             <Search className="search-leading size-4" aria-hidden="true" />
@@ -372,8 +409,10 @@ export function SceneViewer({ modelId, name }: { modelId: string; name: string }
           context: () => {
             const current = currentRoute.current;
             const item = current.status === "ready" ? current.item : null;
-            const heading = viewControl.current?.heading() ?? (sdk && pose.current ? headingDegrees(sdk, pose.current) : undefined);
-            return { model_id: modelId, ...context(), heading_deg: heading, ...(item ? { current_item_id: item.id, items: [item] } : {}) };
+            const live = livePose();
+            const heading = live?.headingDeg ?? viewControl.current?.heading();
+            return { model_id: modelId, ...context(), heading_deg: heading === undefined ? undefined : wrapHeading(heading), speed_mps: live?.speedMps ?? 0, walking_speed_mps: live?.walkingSpeedMps,
+              moving: Boolean(motion.current || live?.moving), observed_at: Date.now(), ...(item ? { current_item_id: item.id, items: [item] } : {}) };
           },
           apply: applyVoice,
           stop: stopMovement,
@@ -381,10 +420,11 @@ export function SceneViewer({ modelId, name }: { modelId: string; name: string }
           guidance: () => {
             const current = currentRoute.current;
             if (current.status !== "ready" || !current.plan) return null;
-            const position = sim ? simFloor.current : pano ? sweeps.current.find((s) => s.id === sweepId)?.position
-              : sdk && pose.current ? toApi(sdk, pose.current.position) : null;
-            const heading = viewControl.current?.heading() ?? (sdk && pose.current ? headingDegrees(sdk, pose.current) : undefined);
-            return position ? guidanceFor(current.plan, position, heading) : null;
+            const live = livePose();
+            const position = live?.position ?? (sim ? simFloor.current : pano ? sweeps.current.find((s) => s.id === sweepId)?.position
+              : sdk && pose.current ? toApi(sdk, pose.current.position) : null);
+            const heading = live?.headingDeg ?? viewControl.current?.heading();
+            return position ? guidanceFor(current.plan, position, heading, live?.speedMps) : null;
           },
         }} />
       </div>

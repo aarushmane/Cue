@@ -1,7 +1,7 @@
 [project]
 name = "storeguide-backend"
 version = "0.1.0"
-description = "Read-only FastAPI server for StoreGuide's existing Supabase database"
+description = "FastAPI voice WebSocket server for StoreGuide"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

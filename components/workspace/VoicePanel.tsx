@@ -9,7 +9,7 @@ import { useVoice, type VoiceBridge } from "./useVoice";
 import { useVoicePreferences } from "./useVoicePreferences";
 import { VoiceSettings } from "./VoiceSettings";
 
-export function VoicePanel({ bridge, interruptRef, search }: { bridge: VoiceBridge; interruptRef: RefObject<(() => void) | null>; search: ReactNode }) {
+export function VoicePanel({ bridge, interruptRef, search, activity }: { bridge: VoiceBridge; interruptRef: RefObject<(() => void) | null>; search: ReactNode; activity?: string | null }) {
   const { preferences, update } = useVoicePreferences();
   const voice = useVoice(bridge, preferences);
   useImperativeHandle(interruptRef, () => voice.interrupt, [voice.interrupt]);
@@ -17,7 +17,7 @@ export function VoicePanel({ bridge, interruptRef, search }: { bridge: VoiceBrid
   const active = ["listening", "thinking", "speaking"].includes(voice.phase);
   const pending = voice.phase === "connecting";
   const label = pending ? "Cancel microphone request" : active ? "Disable microphone" : "Enable microphone";
-  const status = pending ? "Connecting" : voice.phase === "thinking" ? "Thinking" : voice.phase === "speaking" ? "Speaking" : active ? "Listening" : "Off";
+  const status = pending ? "Connecting" : voice.phase === "thinking" ? "Working" : voice.phase === "speaking" ? "Speaking" : active ? !voice.listeningOpen ? "Say Hey Cue" : voice.interrupted ? "Stopped" : voice.navigation === "guiding" ? "Guiding" : voice.navigation === "arrived" ? "Arrived" : "Listening" : "Off";
 
   return (
     <aside className="voice-panel" aria-label="Voice">
@@ -30,7 +30,13 @@ export function VoicePanel({ bridge, interruptRef, search }: { bridge: VoiceBrid
         </span>
       </header>
       <div className="voice-main">
-        <AudioWave analyser={voice.analyser} />
+        <div className="voice-activity" data-working={pending || voice.phase === "thinking" || Boolean(activity)}>
+          <AudioWave analyser={voice.analyser} mode={active && (voice.interrupted || voice.navigation === "arrived") ? "stopped" : voice.phase === "connecting" ? "off" : voice.phase} />
+          {(pending || voice.phase === "thinking" || activity) && <div className="voice-working" role="status">
+            <span className="voice-progress-ring motion-reduce:animate-none" aria-hidden="true" />
+            <span>{voice.progress?.label ?? activity ?? "Connecting voice"}</span>
+          </div>}
+        </div>
         <div className="flex items-center gap-3">
         <Tooltip>
           <TooltipTrigger asChild>
@@ -52,7 +58,7 @@ export function VoicePanel({ bridge, interruptRef, search }: { bridge: VoiceBrid
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon" className="size-11" aria-label="Stop speech and movement" onClick={voice.interrupt}>
+            <Button variant={voice.interrupted ? "secondary" : "ghost"} size="icon" className="size-11" aria-label="Stop speech and movement" aria-pressed={voice.interrupted} onClick={voice.interrupt}>
               <Square className="size-4" aria-hidden="true" />
             </Button>
           </TooltipTrigger>
@@ -60,7 +66,7 @@ export function VoicePanel({ bridge, interruptRef, search }: { bridge: VoiceBrid
         </Tooltip>
         </div>
         <p id="microphone-status" role="status" className={voice.error ? "voice-error text-destructive" : "sr-only"}>
-          {voice.error ?? (pending ? "Connecting microphone to ElevenLabs." : active ? `${status}. Microphone audio is sent to ElevenLabs for transcription.` : "Microphone off.")}
+          {voice.error ?? (pending ? "Connecting microphone to ElevenLabs." : active ? `${status}. ${voice.listeningOpen ? "Listening for requests and interruptions." : "Say Hey Cue to begin."} Microphone audio is sent to ElevenLabs for transcription.` : "Microphone off.")}
         </p>
         <div className="w-full space-y-2 px-6 text-sm" aria-label="Conversation">
           {voice.transcript && <p className="m-0 break-words text-muted-foreground" aria-label="You">{voice.transcript}</p>}

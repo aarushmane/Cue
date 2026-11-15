@@ -114,8 +114,8 @@ through them), `polyline`, `standPoint`, `facingDeg`, `legs[].text`, `arrows[]` 
   once when you stop; a failed re-plan keeps the last route. **Walk me there** follows the route to the stand point
   and turns to the item.
 - **Fallbacks:** without WebGL2 or a MatterPak, the 360° photo viewer (`PanoViewer`), then the Showcase embed.
-- **Search order:** the search box asks `/api/wayfinding/route` first (catalogue, then photo search); the agent is only
-  asked when that finds nothing.
+- **Search:** the search box makes one request to `/api/wayfinding/route`, using saved items and the catalogue.
+  A miss returns immediately. Photo search requires an explicit voice request or `search_photos: true` in the route request.
 
 ## Photo search notes
 
@@ -128,8 +128,9 @@ through them), `polyline`, `standPoint`, `facingDeg`, `legs[].text`, `arrows[]` 
 - Only scan points with orientation data from the Model API can be searched (3 for this model).
 
 - Brand, product and category questions ("takis", "dr pepper", "chips", "something to drink") are answered from the
-  catalogue — `data/wayfinding/<modelId>.catalog.json` when saved (`npm run wayfinding:catalog`), else built once and
-  cached — with no AI call. Anything it doesn't cover falls back to the live photo search.
+  catalogue — `data/wayfinding/<modelId>.catalog.json` when saved, otherwise the disk/memory cache — with no AI call.
+  Interactive requests never build a full catalogue. Voice requests automatically search photos once when the exact
+  destination is missing from the catalogue; typed route requests can opt in with `search_photos: true`.
 - `Muo5jpq44Xk` catalogue: 50 placed products, 39 brands (soda, chips, beer, cereal, noodles, detergent, snack cakes, …).
   No candy is legible from its 3 photo points, so "candy" finds nothing (the live search's guesses are rejected).
 - Gemini free-tier limits are per model per day (500 for `gemini-3.1-flash-lite`). On "quota exceeded" the app moves to

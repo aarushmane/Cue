@@ -5,7 +5,7 @@
 //    3D ray from that sweep's camera centre. Two or more rays from different sweeps are triangulated; a single ray is
 //    intersected with the first shelf/fixture box it hits. Detections themselves (which pixel shows "chips") come
 //    from a vision model or staff later — this module only does the geometry.
-import { resolveProduct } from "../search/matchProducts";
+import { resolveProduct, scoreProduct } from "../search/matchProducts";
 import { FACES } from "./skybox";
 import type { Product } from "../search/types";
 import { add, normalize, rayHitsBox, rotate, scale, triangulate, v3, type Ray } from "./geometry";
@@ -26,8 +26,13 @@ export function findItem(query: string, items: SceneItem[]): ItemMatch {
     aliases: [...(item.aliases ?? []), ...(item.category ? [item.category] : [])], item,
   } satisfies Product & { item: SceneItem }));
   const result = resolveProduct(query, asProducts);
-  if (result.status === "MATCH") return { status: "MATCH", item: result.product.item };
-  if (result.status === "AMBIGUOUS") return { status: "AMBIGUOUS", options: result.options.map((o) => o.item) };
+  // Partial token overlap must never turn a named brand into a different brand.
+  if (result.status === "MATCH" && scoreProduct(query, result.product) >= 60) return { status: "MATCH", item: result.product.item };
+  if (result.status === "AMBIGUOUS") {
+    const options = result.options.filter((product) => scoreProduct(query, product) >= 60).map((product) => product.item);
+    if (options.length === 1) return { status: "MATCH", item: options[0] };
+    if (options.length) return { status: "AMBIGUOUS", options };
+  }
   return { status: "NO_MATCH" };
 }
 

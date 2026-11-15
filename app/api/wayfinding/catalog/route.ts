@@ -17,7 +17,7 @@ export async function GET(request: Request) {
     const scene = await loadScene(parsed.data.model_id).catch((error: unknown) => {
       throw new HttpError(502, error instanceof Error ? error.message : "Could not load the space.");
     });
-    const items = await sceneCatalog(scene);
+    const items = await sceneCatalog(scene, { build: true });
     if (!items.length) throw new HttpError(503, "The catalogue could not be built (no AI provider, or its quota is used up). Try again later.");
     return Response.json({ model_id: parsed.data.model_id, at: Date.now(), items });
   } catch (error) {

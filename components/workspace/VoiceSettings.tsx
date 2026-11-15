@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { STANDARD_VOICES, type VoicePreferences } from "@/lib/voice/preferences";
 import { playSpeech } from "@/lib/voice/playback";
+import { voiceSocket } from "@/lib/voice/socket";
 
 export function VoiceSettings({ preferences, onChange, onPreview }: {
   preferences: VoicePreferences; onChange: (settings: VoicePreferences) => void; onPreview: () => void;
@@ -27,9 +28,7 @@ export function VoiceSettings({ preferences, onChange, onPreview }: {
   useEffect(() => {
     if (!open) return;
     const abort = new AbortController();
-    fetch("/api/voice/voices", { signal: abort.signal }).then(async (response) => {
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Could not load ElevenLabs voices.");
+    voiceSocket.request<{ voices: { id: string; name: string }[]; warning?: string }>("voices", {}, abort.signal).then((data) => {
       const items = [{ id: "", name: "Server default" }, ...data.voices] as { id: string; name: string }[];
       setVoices(items);
       setNotice(data.warning ?? "");

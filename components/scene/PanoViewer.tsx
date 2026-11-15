@@ -94,6 +94,14 @@ export function PanoViewer({ modelId, sweepId, plan, faceKey, onSweeps, onMove, 
       turn: (degrees) => { view.current.tween++; view.current.yaw = wrap(view.current.yaw + degrees); redraw.current(); },
       moving: () => false,
       heading: () => view.current.yaw,
+      pose: () => view.current.sweep ? { position: view.current.sweep.position, headingDeg: view.current.yaw, speedMps: 0, moving: false } : null,
+      face: (position) => {
+        const v = view.current;
+        if (!v.sweep) return;
+        v.tween++;
+        const aim = lookAtAngles(v.sweep.camera, position);
+        v.yaw = aim.yawDeg; v.pitch = aim.pitchDeg; redraw.current();
+      },
     };
     return () => { controlRef.current = null; };
   }, [controlRef]);
@@ -222,9 +230,9 @@ export function PanoViewer({ modelId, sweepId, plan, faceKey, onSweeps, onMove, 
       const plan = props.current.plan;
       if (plan) {
         const route = floorPath(plan.polyline, plan.item.position);
-        const band = route.length > 1 ? fill(ribbon(route, 0.22)) : null;
+        const band = route.length > 1 ? fill(ribbon(route, 0.16)) : null;
         if (band) {
-          ctx.globalAlpha = 0.5;
+          ctx.globalAlpha = 0.3;
           ctx.fillStyle = color;
           ctx.fill(band);
           ctx.globalAlpha = 0.9;

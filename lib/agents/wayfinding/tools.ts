@@ -5,6 +5,9 @@ import { z } from "zod";
 import { findItem, locateFromDetections, type Detection } from "../../wayfinding/locate";
 import { planRouteToItem, planToNearest } from "../../wayfinding/plan";
 import type { RoutePlan, SceneItem, StartPoint, WayfindingScene } from "../../wayfinding/types";
+import type { VoiceEvent } from "@/lib/voice/types";
+import { normalize } from "@/lib/search/matchProducts";
+import { isCategoryQuery } from "@/lib/wayfinding/catalogMatch";
 
 /** Mutable per-run state the tools read and write. One instance per agent run. */
 export interface WayfindingRun {
@@ -17,6 +20,10 @@ export interface WayfindingRun {
   item?: SceneItem;
   plan?: RoutePlan;
   log: { at: string; event: string; detail?: unknown }[];
+  onEvent?: (event: VoiceEvent) => void;
+  targetQuery?: string;
+  lockedItemId?: string;
+  searchQuery?: string;
 }
 
 const json = (v: unknown) => JSON.stringify(v);
@@ -25,11 +32,23 @@ const log = (run: WayfindingRun, event: string, detail?: unknown) => run.log.pus
 const brief = (i: SceneItem) => ({ item_id: i.id, name: i.name, category: i.category ?? null, source: i.source, confidence: i.confidence ?? null });
 
 export function wayfindingTools(run: WayfindingRun) {
+  const memo = new Map<string, string>();
   const find = tool(
     async ({ query }) => {
+      if (run.lockedItemId) {
+        const item = run.scene.items.find((item) => item.id === run.lockedItemId);
+        if (item) { run.item = item; return json({ status: "MATCH", item: brief(item), method: "locked_destination" }); }
+      }
+      query = run.searchQuery ?? query;
+      if (memo.has(`find:${query}`)) return memo.get(`find:${query}`)!;
+      run.onEvent?.({ type: "progress", stage: "finding", label: "Finding destination" });
       const match = findItem(query, run.scene.items);
       log(run, "find_item", { query, status: match.status });
-      if (match.status === "MATCH") { run.item = match.item; return json({ status: "MATCH", item: brief(match.item) }); }
+      if (match.status === "MATCH") { run.item = match.item; const result = json({ status: "MATCH", item: brief(match.item) }); memo.set(`find:${query}`, result); return result; }
+      if (match.status === "AMBIGUOUS" && new Set(match.options.map((item) => normalize(item.name))).size === 1) {
+        const nearest = planToNearest(run.scene, run.start, match.options);
+        if (nearest) { run.item = nearest.item; return json({ status: "MATCH", item: brief(nearest.item), method: "nearest_location" }); }
+      }
       if (match.status === "AMBIGUOUS") return json({ status: "AMBIGUOUS", options: match.options.map(brief) });
       return json({
         status: "NO_MATCH",
@@ -46,18 +65,24 @@ export function wayfindingTools(run: WayfindingRun) {
 
   const locate = tool(
     async ({ label }) => {
+      if (run.lockedItemId) return json({ status: "TARGET_LOCKED", reason: "The destination is already selected; use read_route. Do not search again." });
+      label = run.searchQuery ?? label;
+      if (memo.has(`locate:${label}`)) return memo.get(`locate:${label}`)!;
+      run.onEvent?.({ type: "progress", stage: "locating", label: "Looking through the scene" });
       const entry = run.detections.find((d) => d.label.toLowerCase() === label.toLowerCase());
       if (!entry) {
         // No detections supplied: look for it in the scan's photos.
         if (!run.searchPhotos) return json({ status: "NO_DETECTIONS", available: run.detections.map((d) => d.label) });
         const found = await run.searchPhotos(label);
         log(run, "locate_item", { label, via: "photos", status: found.status, detections: found.detections });
-        if (found.status !== "OK" || !found.items?.length) return json({ status: found.status, reason: found.reason, detections: found.detections });
+        if (found.status !== "OK" || !found.items?.length) {
+          const result = json({ status: found.status, reason: found.reason, detections: found.detections }); memo.set(`locate:${label}`, result); return result;
+        }
         // Seen in several places: offer the nearest one.
         run.scene.items.push(...found.items);
         const nearest = planToNearest(run.scene, run.start, found.items)!;
         run.item = nearest.item;
-        return json({ status: "OK", item: brief(nearest.item), method: "photos", places_seen: found.items.length, detections: found.detections });
+        const result = json({ status: "OK", item: brief(nearest.item), method: "photos", places_seen: found.items.length, detections: found.detections }); memo.set(`locate:${label}`, result); return result;
       }
       const result = locateFromDetections(run.scene.waypoints, entry.detections, run.scene.obstacles, run.scene.surfaces);
       log(run, "locate_item", { label, status: result.status });
@@ -78,14 +103,29 @@ export function wayfindingTools(run: WayfindingRun) {
 
   const plan = tool(
     async ({ item_id }) => {
+      if (memo.has(`plan:${item_id}`)) return memo.get(`plan:${item_id}`)!;
+      run.onEvent?.({ type: "progress", stage: "routing", label: "Drawing path" });
       const item = run.scene.items.find((i) => i.id === item_id);
       if (!item) return json({ status: "ITEM_NOT_FOUND", reason: "Unknown item id; call find_item first." });
+      if (run.searchQuery && !isCategoryQuery(run.searchQuery) && findItem(run.searchQuery, [item]).status !== "MATCH") {
+        return json({ status: "WRONG_DESTINATION", reason: `The exact requested product is ${run.searchQuery}. Do not substitute ${item.name}; report that the requested product could not be verified.` });
+      }
+      if (run.lockedItemId && run.lockedItemId !== item.id) return json({ status: "TARGET_LOCKED", reason: "Keep the current destination. The visitor must explicitly request a new one to change it." });
+      if (run.targetQuery) {
+        const requested = findItem(run.targetQuery, run.scene.items);
+        const allowed = requested.status === "MATCH" ? [requested.item] : requested.status === "AMBIGUOUS" ? requested.options : [];
+        if (allowed.length && !allowed.some((target) => target.id === item.id)) {
+          return json({ status: "WRONG_DESTINATION", reason: `The visitor requested ${allowed.map((target) => target.name).join(" or ")}. Find and plan that destination; do not substitute ${item.name}.` });
+        }
+      }
       const result = planRouteToItem(run.scene, run.start, item);
       run.item = item;
       run.plan = result;
+      if (result.status === "OK" || result.status === "ALREADY_THERE") run.lockedItemId = item.id;
+      run.onEvent?.({ type: "route", item, plan: result });
       log(run, "plan_route", { item_id, status: result.status });
-      if (result.status !== "OK" && result.status !== "ALREADY_THERE") return json(result);
-      return json({
+      if (result.status !== "OK" && result.status !== "ALREADY_THERE") { const answer = json(result); memo.set(`plan:${item_id}`, answer); return answer; }
+      const answer = json({
         status: result.status,
         total_distance_m: result.totalDistanceM,
         directions: result.legs.map((l) => l.text),
@@ -93,6 +133,7 @@ export function wayfindingTools(run: WayfindingRun) {
         arrows: result.arrows.length,
         warnings: result.warnings,
       });
+      memo.set(`plan:${item_id}`, answer); return answer;
     },
     {
       name: "plan_route",

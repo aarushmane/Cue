@@ -136,7 +136,7 @@ async function panoFaces(modelId: string, pano: Pano, res: number): Promise<THRE
 // ── Route drawn in the scene, lying on the floor ──
 function routeGroup(plan: OkPlan, path: Vec3[], color: THREE.Color, ink: THREE.Color): { group: THREE.Group; chevrons: THREE.MeshBasicMaterial[] } {
   const group = new THREE.Group();
-  const outline = ribbon(path, 0.22, 0.015);
+  const outline = ribbon(path, 0.16, 0.015);
   if (outline.length >= 4) {
     const k = outline.length / 2;
     const left = outline.slice(0, k), right = outline.slice(k).reverse();
@@ -146,11 +146,11 @@ function routeGroup(plan: OkPlan, path: Vec3[], color: THREE.Color, ink: THREE.C
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
-    group.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2 })));
+    group.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2 })));
   }
   const chevrons: THREE.MeshBasicMaterial[] = [];
   for (const a of chevronsAlong(path)) {
-    const [tip, backL, notch, backR] = floorChevron(a.position, a.headingDeg, 0.32, 0.025);
+    const [tip, backL, notch, backR] = floorChevron(a.position, a.headingDeg, 0.24, 0.025);
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.Float32BufferAttribute([tip, backL, notch, tip, notch, backR].flatMap((p) => [p.x, p.y, p.z]), 3));
     const m = new THREE.MeshBasicMaterial({ color: ink, transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide });
@@ -158,23 +158,39 @@ function routeGroup(plan: OkPlan, path: Vec3[], color: THREE.Color, ink: THREE.C
     group.add(new THREE.Mesh(g, m));
   }
   // Where to stand: a ring on the floor.
-  const ring = new THREE.Mesh(new THREE.RingGeometry(0.32, 0.42, 48), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide }));
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.36, 0.43, 64), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95, depthWrite: false, side: THREE.DoubleSide }));
   ring.position.set(plan.standPoint.x, plan.standPoint.y, plan.standPoint.z + 0.02);
   group.add(ring);
+  const landing = new THREE.Mesh(new THREE.CircleGeometry(0.43, 64), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide }));
+  landing.position.set(plan.standPoint.x, plan.standPoint.y, plan.standPoint.z + 0.015);
+  group.add(landing);
   // The item: a pin seen through shelves (it marks the goal), on a stem from the floor.
   const item = plan.item.position;
-  const pin = new THREE.Mesh(new THREE.SphereGeometry(0.07, 20, 14), new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true }));
+  const marker = document.createElement("canvas");
+  marker.width = 384; marker.height = 96;
+  const ctx = marker.getContext("2d")!;
+  ctx.beginPath(); ctx.roundRect(4, 8, 376, 80, 22);
+  ctx.fillStyle = `#${ink.getHexString()}`; ctx.fill();
+  ctx.strokeStyle = `#${color.getHexString()}`; ctx.lineWidth = 4; ctx.stroke();
+  ctx.beginPath(); ctx.arc(42, 48, 20, 0, Math.PI * 2); ctx.fillStyle = `#${color.getHexString()}`; ctx.fill();
+  ctx.beginPath(); ctx.arc(42, 48, 6, 0, Math.PI * 2); ctx.fillStyle = `#${ink.getHexString()}`; ctx.fill();
+  ctx.font = `600 30px ${getComputedStyle(document.body).fontFamily}`;
+  ctx.textBaseline = "middle"; ctx.fillStyle = `#${color.getHexString()}`;
+  let title = plan.item.name;
+  while (ctx.measureText(title).width > 285 && title.length > 1) title = title.slice(0, -1);
+  if (title !== plan.item.name) title = title.slice(0, -1) + "…";
+  ctx.fillText(title, 78, 48);
+  const pin = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(marker), depthTest: false, sizeAttenuation: false }));
+  pin.scale.set(0.28, 0.07, 1);
+  pin.center.set(0.5, 0);
   pin.position.set(item.x, item.y, item.z);
   pin.renderOrder = 10;
-  const halo = new THREE.Mesh(new THREE.SphereGeometry(0.1, 20, 14), new THREE.MeshBasicMaterial({ color: ink, depthTest: false, transparent: true, opacity: 0.85 }));
-  halo.position.copy(pin.position);
-  halo.renderOrder = 9;
   const stem = new THREE.Line(
     new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(item.x, item.y, plan.standPoint.z), new THREE.Vector3(item.x, item.y, item.z)]),
     new THREE.LineBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.8 }),
   );
   stem.renderOrder = 8;
-  group.add(stem, halo, pin);
+  group.add(stem, pin);
   return { group, chevrons };
 }
 
@@ -183,7 +199,7 @@ function disposeGroup(group: THREE.Object3D) {
     const m = o as THREE.Mesh;
     m.geometry?.dispose();
     const mat = m.material as THREE.Material | THREE.Material[] | undefined;
-    (Array.isArray(mat) ? mat : mat ? [mat] : []).forEach((x) => x.dispose());
+    (Array.isArray(mat) ? mat : mat ? [mat] : []).forEach((x) => { (x as THREE.SpriteMaterial).map?.dispose(); x.dispose(); });
   });
 }
 
@@ -234,6 +250,7 @@ export function SimViewer({ modelId, plan, onPosition, onUnavailable, controlRef
       grid: null as SimGrid | null,
       floor: { x: 0, y: 0 },
       yaw: 0, pitch: -8, fov: 75,
+      speedMps: 0, guideMps: GUIDE_MPS,
       route: null as { group: THREE.Group; chevrons: THREE.MeshBasicMaterial[] } | null,
       plan: null as OkPlan | null,
       guide: null as null | { path: Vec3[]; atM: number; endYaw: number | null },
@@ -251,6 +268,7 @@ export function SimViewer({ modelId, plan, onPosition, onUnavailable, controlRef
     const keys = new Set<string>();
     let frame = 0;
     const clock = new THREE.Clock();
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
     function onUnavailableOnce(reason: string) { if (live) latest.current.onUnavailable(reason); }
 
@@ -264,15 +282,8 @@ export function SimViewer({ modelId, plan, onPosition, onUnavailable, controlRef
       state.drawnAt = { ...state.floor };
     };
     const setPlan = (p: OkPlan | null) => {
-      const isNew = p && state.plan?.item.id !== p.item.id;
       state.plan = p;
       drawRoute();
-      if (!p) return;
-      // A new item: turn toward the way to go (re-plans while walking don't turn the visitor).
-      if (isNew && state.grid) {
-        if (p.status === "ALREADY_THERE" || p.polyline.length < 2) faceTarget(p.item.position);
-        else faceTarget(lookAhead(p.polyline, { ...state.floor, z: state.grid.floorZ }, 2.5), true);
-      }
     };
     const faceTarget = (t: Vec3, flat = false) => {
       const eye = state.grid ? eyeAt(state.grid, state.floor) : camera.position;
@@ -294,7 +305,10 @@ export function SimViewer({ modelId, plan, onPosition, onUnavailable, controlRef
       stop,
       turn: (degrees) => { stop(); state.turnTo = { yaw: state.yaw + degrees, pitch: state.pitch }; },
       moving: () => Boolean(state.guide || state.turnTo),
-      heading: () => state.yaw,
+      heading: () => wrap(state.yaw),
+      pose: () => state.grid ? { position: { ...state.floor, z: state.grid.floorZ }, headingDeg: wrap(state.yaw), speedMps: state.speedMps, walkingSpeedMps: state.guideMps, moving: Boolean(state.guide || state.turnTo) } : null,
+      face: (target) => { stop(); faceTarget(target); },
+      speed: (mps) => { state.guideMps = Math.max(0.4, Math.min(1.8, mps)); },
       guide: (plan) => { setPlan(plan); guide(); },
     };
 
@@ -521,18 +535,25 @@ export function SimViewer({ modelId, plan, onPosition, onUnavailable, controlRef
       } else if (state.guide) {
         const gd = state.guide;
         const total = progressAlong(gd.path, gd.path[gd.path.length - 1]).atM;
-        gd.atM = Math.min(total, gd.atM + GUIDE_MPS * dt);
         const next = pointAlong(gd.path, gd.atM);
-        state.floor = { x: next.x, y: next.y }; // the route is planned on walkable floor
-        const ahead = pointAlong(gd.path, gd.atM + 1.2);
+        const ahead = pointAlong(gd.path, gd.atM + 0.6);
+        let error = 0;
         if (Math.hypot(ahead.x - next.x, ahead.y - next.y) > 0.05) {
           const want = (Math.atan2(ahead.y - next.y, ahead.x - next.x) * 180) / Math.PI;
+          error = Math.abs(wrap(want - state.yaw));
           state.yaw += wrap(want - state.yaw) * (1 - Math.exp(-dt * 4));
           state.pitch += (-12 - state.pitch) * (1 - Math.exp(-dt * 3));
+        }
+        // Align before translating; sharp corners pause walking instead of sliding sideways.
+        if (error < 12) {
+          gd.atM = Math.min(total, gd.atM + state.guideMps * dt);
+          const step = pointAlong(gd.path, gd.atM);
+          state.floor = { x: step.x, y: step.y };
         }
         if (gd.atM >= total - 1e-3) { state.guide = null; if (state.plan) faceTarget(state.plan.item.position); }
       }
       const stepped = Math.hypot(state.floor.x - before.x, state.floor.y - before.y) > 1e-4;
+      state.speedMps = dt > 0 ? Math.hypot(state.floor.x - before.x, state.floor.y - before.y) / dt : 0;
       if (stepped) { state.moved = true; state.stillSince = performance.now(); }
 
       // The drawn route follows the visitor every few centimetres: it starts at their feet.
@@ -561,10 +582,11 @@ export function SimViewer({ modelId, plan, onPosition, onUnavailable, controlRef
       camera.lookAt(eye.x + Math.cos(p) * fwd.x, eye.y + Math.cos(p) * fwd.y, eye.z + Math.sin(p));
       if (camera.fov !== state.fov) { camera.fov = state.fov; camera.updateProjectionMatrix(); }
 
-      // Chevrons pulse toward the item.
+      // Quiet when stopped; a subtle forward cue only during guidance.
       if (state.route) {
         const t = now / 1000;
-        state.route.chevrons.forEach((m, i) => { m.opacity = 0.45 + 0.5 * Math.max(0, Math.sin(t * 3 - i * 0.6)); });
+        const animate = Boolean(state.guide) && !reducedMotion.matches;
+        state.route.chevrons.forEach((m, i) => { m.opacity = animate ? 0.78 + 0.18 * Math.max(0, Math.sin(t * 2 - i * 0.6)) : 0.95; });
       }
       renderer.render(scene, camera);
 
