@@ -1,15 +1,13 @@
 # StoreGuide
 
-One rectangular free-camera mesh viewer, using the supplied Matterport scan `Muo5jpq44Xk`.
+Matterport Showcase viewer for the supplied scan `Muo5jpq44Xk`, with a separate Python backend.
 
 ```sh
 npm install
 npm run dev
 ```
 
-Open http://localhost:3000. Click the viewer to focus, drag to look, use WASD to move, and R/F to move up/down. The camera moves continuously, including through walls; this is a geometry viewer, not validated walking navigation.
-
-The original OBJ is untextured. Photographic panoramas are not mesh textures.
+Open http://localhost:3000. Showcase handles looking around and jumping between scan points. The toolbar resets the tour and toggles fullscreen. The default tour does not require Supabase or server-side Matterport API credentials.
 
 ## Python backend
 
@@ -24,19 +22,14 @@ configuration, with no authentication or agent endpoints in this initial version
 Use `.env.local` for the Supabase settings in `.env.example`. The existing `stores` table already has `costar_property_id`, `matterport_model_id`, `name`, and `address`. Existing Supabase tables, records, migrations, and seed SQL are preserved.
 
 - `POST /api/db/properties`: insert a property/scan mapping using `Authorization: Bearer <PROPERTY_WRITE_TOKEN>`. Body: `{ "property_id": "236314", "matterport_model_id": "Muo5jpq44Xk", "name": "Sample Storefront", "address": "6301–6335 Ashcroft Dr, Houston, TX" }`. Retries return the existing row without updating it.
-- `/scene/236314`: read the newest saved scan for that property from Supabase and open its mesh viewer.
+- `/scene/236314`: read the newest saved scan for that property from Supabase and open its Showcase tour.
 - `/`: open the supplied scan directly.
 
 Run `npm run property:add-example` while the dev server is running to save the supplied property through the API. It reads the write token from the environment and does not print credentials.
 
-## Rendering data
+## Scene rendering
 
-- `GET /api/scenes/:modelId` returns a render manifest: model ID, source revision, units, coordinate conversion, stable mesh-proxy URL, and initial camera position.
-- `GET /api/scenes/:modelId/mesh` streams the original OBJ from Matterport to the browser. Expired asset links trigger one metadata refresh. Only models registered in `stores` are served.
-- Matterport API credentials stay on the server. Metadata is cached for five minutes; geometry is streamed without writing assets into the project. The browser caches geometry for five minutes.
-- Three.js parses the OBJ and converts Z-up to Y-up once. The camera start position is converted separately with `(x, y, z) → (x, z, -y)`. Panorama rotations are not guessed or used as mesh textures.
-
-The existing Supabase table remains the source of property/model identities. This first renderer fetches live metadata; it does not create an ingestion-job system, duplicate the schema, or generate point clouds. A later ingestion worker can put versioned assets and raw source snapshots into object storage behind the same manifest and mesh URLs.
+`components/scene/SceneViewer.tsx` embeds `https://my.matterport.com/show/` directly. Showcase owns photographic rendering and scan-point navigation. Programmatic SDK control and semantic drawing integration are future work; the Python backend currently exposes drawing placeholders.
 
 Validation: `npm run typecheck` and `npm run build`.
 
@@ -44,4 +37,4 @@ Validation: `npm run typecheck` and `npm run build`.
 
 Read [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md) before frontend changes. It combines the supplied frontend guidance with shadcn/ui Radix Nova, Tailwind v4 semantic tokens, and the local primitives in `components/ui`.
 
-Run `npm run check:ui` with the dev server running for desktop/mobile screenshots and canvas/interaction checks. It uses installed Google Chrome. The shadcn MCP is configured for Codex; component registries are defined by `components.json`.
+Run `npm run check:ui` with the dev server running for desktop/mobile screenshots and embed/interaction checks. It uses installed Google Chrome. The shadcn MCP is configured for Codex; component registries are defined by `components.json`.

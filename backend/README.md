@@ -87,8 +87,8 @@ maps; product visibility additionally depends on the existing public RLS policy.
 
 Authentication and agent endpoints are deferred. Private staff membership, media,
 observations, audit events, reports, navigation sessions, and inventory suggestions
-have no endpoints in this initial public API. Matterport manifest/mesh streaming
-and the existing token-protected property write remain in Next.js.
+have no endpoints in this initial public API. Next.js hosts the Showcase embed,
+property lookup, and the existing token-protected property write.
 
 ## Scene drawing placeholders
 
