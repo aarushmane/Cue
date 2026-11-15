@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Store Walkthrough</title>
+<style>
+  :root { --bg: #111; --fg: #eee; --panel: rgba(0,0,0,.6); --accent: #6cf; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; overflow: hidden; }
+  canvas { display: block; }
+  #hud { position: fixed; top: 12px; left: 12px; background: var(--panel); padding: 10px 14px; border-radius: 8px; max-width: 360px; pointer-events: none; }
+  #hud h1 { font-size: 15px; margin: 0 0 4px; }
+  #hud .sub { opacity: .75; font-size: 12px; }
+  #hud kbd { background: #333; border-radius: 3px; padding: 0 4px; font-size: 12px; }
+  #start { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(0,0,0,.45); cursor: pointer; }
+  #start div { background: var(--panel); padding: 18px 24px; border-radius: 10px; text-align: center; }
+  #status { color: var(--accent); }
+  #pos { position: fixed; bottom: 10px; left: 12px; font: 12px monospace; opacity: .7; }
+  .hidden { display: none !important; }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="hud">
+  <h1 id="title">Loading…</h1>
+  <div class="sub" id="addr"></div>
+  <div class="sub" style="margin-top:6px">
+    <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move · mouse/trackpad look ·
+    <kbd>Space</kbd>/<kbd>C</kbd> up/down · <kbd>Shift</kbd> fast · <kbd>F</kbd> fly/walk ·
+    <kbd>P</kbd> pano markers · <kbd>T</kbd> photo / original textures · <kbd>M</kbd> mesh / point cloud · <kbd>[</kbd><kbd>]</kbd> point size · <kbd>1</kbd>-<kbd>9</kbd> jump to pano · <kbd>Esc</kbd> release mouse
+  </div>
+  <div class="sub" id="status"></div>
+</div>
+<div id="start"><div><b>Click to start</b><br><span class="sub">Move the mouse to look (or drag, if the cursor stays visible). Esc frees the cursor.</span></div></div>
+<div id="pos"></div>
+<script type="module" src="./viewer.js"></script>
+</body>
+</html>

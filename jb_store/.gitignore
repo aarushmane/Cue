@@ -1,0 +1,7 @@
+.env
+.env.local
+data/
+__pycache__/
+# CoStar hackathon data: hackathon use only, never commit
+models_index.csv
+ranked_stores_warehouses.csv

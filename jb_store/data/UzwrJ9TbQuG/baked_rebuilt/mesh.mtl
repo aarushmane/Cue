@@ -1,0 +1,34 @@
+newmtl atlas_00
+Ka 1 1 1
+Kd 1 1 1
+map_Kd atlas_00.jpg
+
+newmtl atlas_01
+Ka 1 1 1
+Kd 1 1 1
+map_Kd atlas_01.jpg
+
+newmtl atlas_02
+Ka 1 1 1
+Kd 1 1 1
+map_Kd atlas_02.jpg
+
+newmtl atlas_03
+Ka 1 1 1
+Kd 1 1 1
+map_Kd atlas_03.jpg
+
+newmtl atlas_04
+Ka 1 1 1
+Kd 1 1 1
+map_Kd atlas_04.jpg
+
+newmtl atlas_05
+Ka 1 1 1
+Kd 1 1 1
+map_Kd atlas_05.jpg
+
+newmtl atlas_06
+Ka 1 1 1
+Kd 1 1 1
+map_Kd atlas_06.jpg
