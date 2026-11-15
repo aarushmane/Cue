@@ -17,6 +17,10 @@ After `npm install` changes dependencies, restart `next dev`; a server started b
 
 The scene is the standard Matterport Showcase embed (`https://my.matterport.com/show/?m=<model>&play=1&qs=1`), so navigation is Matterport's own: select a floor marker or use the arrow keys to jump between scan points, drag to look around, scroll or pinch to zoom. `play=1` starts without the play button and `qs=1` skips the fly-in. The toolbar's Reset view reloads the tour at its start point; Fullscreen fills the screen. The model must be public or unlisted in Matterport for the embed to load.
 
+### Finding items
+
+Type what you are looking for in the tour's search field ("where are the chips"). The wayfinding agent finds the item, plans a route around shelves and walls, and shows turn-by-turn directions; with a Showcase SDK key the route is drawn as arrows inside the 3D view. Inputs (item positions, shelf boxes, photo detections), API and frames: [docs/wayfinding.md](docs/wayfinding.md).
+
 ### Property data
 
 Use `.env.local` for the Supabase settings in `.env.example`. The existing `stores` table already has `costar_property_id`, `matterport_model_id`, `name`, and `address`.
