@@ -2,11 +2,15 @@
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import type { MpSdk } from "@matterport/sdk";
-import { ChevronDown, ChevronUp, Crosshair, Expand, Footprints, LoaderCircle, RotateCcw, Search, Shrink, X } from "lucide-react";
+import { ArrowRight, ChevronDown, ChevronUp, Crosshair, Expand, Footprints, LoaderCircle, RotateCcw, Search, Shrink, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
+import { Logo } from "@/components/workspace/Logo";
+import { VoicePanel } from "@/components/workspace/VoicePanel";
+import type { ViewControls, VoiceResult } from "@/lib/voice/types";
+import { guidanceFor } from "@/lib/voice/guidance";
 import { lookAhead } from "@/lib/wayfinding/screen";
 import { RouteMap } from "./RouteMap";
 import { PanoViewer, type PanoSweep } from "./PanoViewer";
@@ -14,7 +18,7 @@ import { SimViewer } from "@/components/sim/SimViewer";
 import type { Vec3 } from "@/lib/wayfinding/types";
 import { aboutSteps } from "@/lib/wayfinding/steps";
 import { RouteOverlay } from "./RouteOverlay";
-import { connectShowcase, SDK_KEY, stepAlong, toApi, watchSweeps, type ClientWaypoint, type Pose } from "./showcase";
+import { connectShowcase, headingDegrees, SDK_KEY, stepAlong, toApi, watchSweeps, type ClientWaypoint, type Pose } from "./showcase";
 import { useWayfinding } from "./useWayfinding";
 
 /**
@@ -51,13 +55,15 @@ export function SceneViewer({ modelId, name }: { modelId: string; name: string }
   const [sdk, setSdk] = useState<MpSdk | null>(null);
   const [query, setQuery] = useState("");
   const [stepping, setStepping] = useState(false);
+  const viewControl = useRef<ViewControls | null>(null);
+  const motion = useRef<AbortController | null>(null);
+  const interruptVoice = useRef<(() => void) | null>(null);
   // The route panel folds down to one line so it doesn't cover the tour.
   const [folded, setFolded] = useState(false);
   // Walkable simulation (no SDK key): where the visitor stands, and a counter that starts "walk me there".
   const [simFailed, setSimFailed] = useState(false);
   const sim = !SDK_KEY && !simFailed;
   const simFloor = useRef<Vec3 | null>(null);
-  const [guideKey, setGuideKey] = useState(0);
   // Built-in 360° viewer (fallback): which scan point the visitor stands on.
   const [panoFailed, setPanoFailed] = useState(false);
   const pano = !SDK_KEY && simFailed && !panoFailed;
@@ -77,9 +83,22 @@ export function SceneViewer({ modelId, name }: { modelId: string; name: string }
     };
   }, [sdk, sim, pano, sweepId]);
   const wayfinding = useWayfinding(modelId, context);
-  const { reroute } = wayfinding;
+  const { reroute, cancel: cancelWayfinding } = wayfinding;
+  const currentRoute = useRef(wayfinding.state);
+  useEffect(() => { currentRoute.current = wayfinding.state; }, [wayfinding.state]);
+  const stopMovement = useCallback(() => {
+    motion.current?.abort();
+    motion.current = null;
+    viewControl.current?.stop();
+    cancelWayfinding();
+    setStepping(false);
+    // Current SDK exposes stop(); older embeds may omit it. Always cancel the queue regardless.
+    if (sdk?.Camera.stop) void sdk.Camera.stop().catch(() => {});
+  }, [sdk, cancelWayfinding]);
+  useEffect(() => () => { motion.current?.abort(); viewControl.current?.stop(); }, []);
 
   const onSweeps = useCallback((list: PanoSweep[]) => {
+    sweeps.current = list.map((s) => ({ id: s.id, position: s.position, floor_id: null, neighbors: s.neighbors }));
     firstSweep.current = list[0].id;
     // `?at=<point id>` opens the view at that place (shareable).
     const at = new URLSearchParams(window.location.search).get("at");
@@ -128,6 +147,7 @@ export function SceneViewer({ modelId, name }: { modelId: string; name: string }
 
   // Reloading the embed returns the visitor to the tour's start point.
   function resetView() {
+    interruptVoice.current?.();
     if (sim || pano) { setSweepId(firstSweep.current); setSession((value) => value + 1); return; }
     setStatus("loading");
     setSession((value) => value + 1);
@@ -145,11 +165,13 @@ export function SceneViewer({ modelId, name }: { modelId: string; name: string }
 
   function submit(event: FormEvent) {
     event.preventDefault();
+    interruptVoice.current?.();
     if (query.trim()) { setFolded(false); wayfinding.find(query.trim()); }
   }
 
   async function nextStop() {
-    if (sim && plan) { setGuideKey((k) => k + 1); return; }
+    interruptVoice.current?.();
+    if (sim && plan) { viewControl.current?.guide?.(plan); return; }
     if (pano && plan) {
       const ids = plan.waypointIds;
       const at = sweepId ? ids.indexOf(sweepId) : -1;
@@ -159,24 +181,90 @@ export function SceneViewer({ modelId, name }: { modelId: string; name: string }
       return;
     }
     if (!sdk || !plan || !pose.current) return;
+    const move = new AbortController();
+    motion.current = move;
     setStepping(true);
     try {
       const ids = plan.waypointIds;
       // After each move, face 2.5 m further along the route from where Showcase put us; at the last stop, the item.
       await stepAlong(sdk, ids, pose.current.sweep, (i) =>
-        i >= ids.length - 1 || !pose.current ? plan.item.position : lookAhead(plan.polyline, toApi(sdk, pose.current.position), 2.5));
+        i >= ids.length - 1 || !pose.current ? plan.item.position : lookAhead(plan.polyline, toApi(sdk, pose.current.position), 2.5), move.signal);
     } catch {
-      setToolError("Could not move to the next stop.");
+      if (!move.signal.aborted) setToolError("Could not move to the next stop.");
     } finally {
-      setStepping(false);
+      if (motion.current === move) { motion.current = null; setStepping(false); }
+    }
+  }
+
+  async function guideRoute(nextPlan: NonNullable<typeof plan>) {
+    stopMovement();
+    if (sim) { viewControl.current?.guide?.(nextPlan); return; }
+    const move = new AbortController();
+    motion.current = move;
+    setStepping(true);
+    try {
+      if (pano) {
+        // Photo fallback has discrete jumps; cancelling prevents every subsequent jump.
+        const at = sweepId ? nextPlan.waypointIds.indexOf(sweepId) : -1;
+        for (const id of nextPlan.waypointIds.slice(Math.max(0, at + 1))) {
+          move.signal.throwIfAborted();
+          setSweepId(id);
+          await new Promise<void>((resolve, reject) => {
+            const cancel = () => { clearTimeout(timer); reject(new DOMException("Stopped", "AbortError")); };
+            const timer = setTimeout(() => { move.signal.removeEventListener("abort", cancel); resolve(); }, 1200);
+            move.signal.addEventListener("abort", cancel, { once: true });
+          });
+        }
+        move.signal.throwIfAborted();
+        setFaceKey((key) => key + 1);
+      } else if (sdk && pose.current) {
+        const ids = nextPlan.waypointIds;
+        for (let i = 0; i <= ids.length; i++) {
+          move.signal.throwIfAborted();
+          await stepAlong(sdk, ids, pose.current.sweep, (at) => at >= ids.length - 1 ? nextPlan.item.position
+            : lookAhead(nextPlan.polyline, toApi(sdk, pose.current!.position), 2.5), move.signal);
+          if (pose.current.sweep === ids.at(-1)) break;
+        }
+      } else throw new Error("Voice movement needs the 3D viewer or a connected Matterport SDK.");
+    } catch (error) {
+      if (!move.signal.aborted) setToolError(error instanceof Error ? error.message : "Could not follow the route.");
+    } finally {
+      if (motion.current === move) { motion.current = null; setStepping(false); }
+    }
+  }
+
+  function applyVoice(result: VoiceResult) {
+    if (result.plan) {
+      wayfinding.adopt(result.item?.name ?? query, result.reply, result.item, result.plan);
+      setQuery(result.item?.name ?? query);
+      setFolded(false);
+    }
+    for (const action of result.actions) {
+      if (action.type === "stop") stopMovement();
+      else if (action.type === "turn") {
+        stopMovement();
+        if (viewControl.current) viewControl.current.turn(action.degrees);
+        else if (sdk) {
+          const move = new AbortController(); motion.current = move;
+          // Model-frame left is positive; Showcase's horizontal angle is clockwise positive.
+          void sdk.Camera.rotate(-action.degrees, 0).catch(() => { if (!move.signal.aborted) setToolError("Could not turn the view."); })
+            .finally(() => { if (motion.current === move) motion.current = null; });
+        } else setToolError("Turning needs the 3D viewer or a connected Matterport SDK.");
+      } else {
+        const nextPlan = result.plan ?? plan;
+        if (nextPlan?.status === "OK" || nextPlan?.status === "ALREADY_THERE") void guideRoute(nextPlan);
+      }
     }
   }
 
   const s = wayfinding.state;
   return (
-    <main ref={viewport} className="scene" aria-label={name}>
+    <div className="workspace">
+      <div className="workspace-body">
+        <main className="explore-pane" aria-label="Map">
+          <section ref={viewport} className="scene" aria-label={name}>
       {sim ? (
-        <SimViewer key={session} modelId={modelId} plan={plan} guideKey={guideKey} onPosition={onSimPosition} onUnavailable={onSimUnavailable} />
+        <SimViewer key={session} modelId={modelId} plan={plan} controlRef={viewControl} onPosition={onSimPosition} onUnavailable={onSimUnavailable} />
       ) : pano ? (
         <PanoViewer
           key={session}
@@ -184,6 +272,7 @@ export function SceneViewer({ modelId, name }: { modelId: string; name: string }
           sweepId={sweepId}
           plan={plan}
           faceKey={faceKey}
+          controlRef={viewControl}
           onSweeps={onSweeps}
           onMove={setSweepId}
           onUnavailable={onUnavailable}
@@ -206,36 +295,19 @@ export function SceneViewer({ modelId, name }: { modelId: string; name: string }
           <span className="sr-only">Loading scene…</span>
         </div>
       )}
-      <div className="scene-toolbar flex max-w-[calc(100vw-2rem)] flex-col items-end gap-2">
-        <div className="flex items-center gap-1 rounded-lg border bg-popover p-1 shadow-sm" role="group" aria-label="Scene tools">
-          <form onSubmit={submit} className="flex min-w-0 items-center gap-1" role="search">
-            <Input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Find an item"
-              aria-label="Find an item"
-              className="h-11 w-36 sm:w-56"
-              maxLength={300}
-            />
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button type="submit" variant="ghost" size="icon" className="size-11" aria-label="Find" disabled={!query.trim() || s.status === "loading"}>
-                  {s.status === "loading" ? <LoaderCircle className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Search aria-hidden="true" />}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">Find</TooltipContent>
-            </Tooltip>
-          </form>
-          <Separator orientation="vertical" className="h-6" />
+      <div className="scene-toolbar">
+        <div className="scene-tools" role="group" aria-label="Scene tools">
           <ToolButton label="Reset view" disabled={!pano && !sim && status !== "ready"} onClick={resetView}><RotateCcw aria-hidden="true" /></ToolButton>
-          <Separator orientation="vertical" className="h-6" />
+          <Separator orientation="vertical" className="h-5" />
           <ToolButton label={fullscreen ? "Exit fullscreen" : "Enter fullscreen"} onClick={toggleFullscreen}>
             {fullscreen ? <Shrink aria-hidden="true" /> : <Expand aria-hidden="true" />}
           </ToolButton>
         </div>
+      </div>
+      <div className="scene-route-container">
 
         {s.status !== "idle" && s.status !== "loading" && (
-          <section className="w-80 max-w-full rounded-lg border bg-popover p-3 text-popover-foreground shadow-sm" aria-live="polite" aria-label="Route">
+          <section className="route-panel" aria-live="polite" aria-label="Route">
             <div className="flex items-start justify-between gap-2">
               <h2 className="m-0 min-w-0 text-heading break-words">
                 {s.status === "ready" && s.item ? s.item.name : s.status === "choose" ? "Which one?" : "No route"}
@@ -249,7 +321,7 @@ export function SceneViewer({ modelId, name }: { modelId: string; name: string }
                 <ToolButton label={folded ? "Show directions" : "Hide directions"} onClick={() => setFolded((v) => !v)}>
                   {folded ? <ChevronDown aria-hidden="true" /> : <ChevronUp aria-hidden="true" />}
                 </ToolButton>
-                <ToolButton label="Clear route" onClick={() => wayfinding.clear()}><X aria-hidden="true" /></ToolButton>
+                <ToolButton label="Clear route" onClick={() => { interruptVoice.current?.(); wayfinding.clear(); }}><X aria-hidden="true" /></ToolButton>
               </div>
             </div>
             {folded && plan && <p className="m-0 font-mono text-label text-muted-foreground">{plan.status === "ALREADY_THERE" ? "You're there" : aboutSteps(plan.totalDistanceM)}</p>}
@@ -282,6 +354,40 @@ export function SceneViewer({ modelId, name }: { modelId: string; name: string }
         )}
       </div>
       {toolError && <p role="alert" className="absolute right-4 bottom-4 left-4 m-0 w-fit max-w-sm rounded-md bg-popover p-3 text-body text-destructive">{toolError}</p>}
-    </main>
+          </section>
+        </main>
+        <VoicePanel interruptRef={interruptVoice} search={<>
+          <Logo />
+          <form onSubmit={submit} className="destination-search" role="search" aria-label="Search the map">
+            <Search className="search-leading size-4" aria-hidden="true" />
+            <Input type="search" value={query} onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search" aria-label="Find an item" maxLength={300}
+              className="h-12 border-border bg-popover pl-10 pr-12 text-popover-foreground" />
+            <Button type="submit" variant="ghost" size="icon" className="search-submit size-10" aria-label="Find"
+              disabled={!query.trim() || s.status === "loading"}>
+              {s.status === "loading" ? <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <ArrowRight className="size-4" aria-hidden="true" />}
+            </Button>
+          </form>
+        </>} bridge={{
+          context: () => {
+            const current = currentRoute.current;
+            const item = current.status === "ready" ? current.item : null;
+            const heading = viewControl.current?.heading() ?? (sdk && pose.current ? headingDegrees(sdk, pose.current) : undefined);
+            return { model_id: modelId, ...context(), heading_deg: heading, ...(item ? { current_item_id: item.id, items: [item] } : {}) };
+          },
+          apply: applyVoice,
+          stop: stopMovement,
+          moving: () => Boolean(motion.current || viewControl.current?.moving()),
+          guidance: () => {
+            const current = currentRoute.current;
+            if (current.status !== "ready" || !current.plan) return null;
+            const position = sim ? simFloor.current : pano ? sweeps.current.find((s) => s.id === sweepId)?.position
+              : sdk && pose.current ? toApi(sdk, pose.current.position) : null;
+            const heading = viewControl.current?.heading() ?? (sdk && pose.current ? headingDegrees(sdk, pose.current) : undefined);
+            return position ? guidanceFor(current.plan, position, heading) : null;
+          },
+        }} />
+      </div>
+    </div>
   );
 }

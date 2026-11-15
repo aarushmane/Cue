@@ -7,7 +7,7 @@ import "server-only";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import { graph, matterportConfigured } from "../costar/matterport";
+import { graph, matterportConfigured } from "../matterport/client";
 import { parseObj, type Surfaces } from "./mesh";
 import { withAislePoints, type WalkGrid } from "./walkable";
 import type { Obstacle, SceneItem, Waypoint, WayfindingScene } from "./types";

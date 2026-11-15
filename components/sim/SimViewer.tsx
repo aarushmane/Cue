@@ -193,23 +193,20 @@ function disposeGroup(group: THREE.Object3D) {
  * walked with WASD (collisions against shelves from the walkable grid), dragged to look, scroll to zoom, number keys
  * to jump to the photo spots. The route is drawn in the scene on the floor (shelves hide it, the item pin shows through).
  */
-export function SimViewer({ modelId, plan, guideKey, onPosition, onUnavailable }: {
+export function SimViewer({ modelId, plan, onPosition, onUnavailable, controlRef }: {
   modelId: string;
   plan: OkPlan | null;
-  /** Changing this walks the visitor along the route (or turns them to the item when already there). */
-  guideKey: number;
   /** Floor position, reported when the visitor stops after moving. */
   onPosition: (floor: Vec3) => void;
   onUnavailable: (reason: string) => void;
+  controlRef?: import("react").RefObject<import("@/lib/voice/types").ViewControls | null>;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const overlay = useRef<HTMLCanvasElement>(null);
   const [progress, setProgress] = useState<string | null>("Loading the store…");
-  const api = useRef<{ setPlan: (p: OkPlan | null) => void; guide: () => void } | null>(null);
+  const api = useRef<{ setPlan: (p: OkPlan | null) => void } | null>(null);
   const latest = useRef({ plan, onPosition, onUnavailable });
   useEffect(() => { latest.current = { plan, onPosition, onUnavailable }; api.current?.setPlan(plan); }, [plan, onPosition, onUnavailable]);
-  const firstGuide = useRef(guideKey);
-  useEffect(() => { if (guideKey !== firstGuide.current) api.current?.guide(); }, [guideKey]);
 
   useEffect(() => {
     const root = host.current!, top = overlay.current!;
@@ -230,8 +227,8 @@ export function SimViewer({ modelId, plan, guideKey, onPosition, onUnavailable }
     camera.up.set(0, 0, 1); // Matterport frame: z up, so routes and items need no conversion
 
     const css = getComputedStyle(root);
-    const color = cssColor(css.getPropertyValue("--primary").trim(), "#10b981");
-    const ink = cssColor(css.getPropertyValue("--primary-foreground").trim(), "#ffffff");
+    const color = cssColor(css.getPropertyValue("--route-color").trim(), "#fcd44a");
+    const ink = cssColor(css.getPropertyValue("--route-ink").trim(), "#ffffff");
 
     const state = {
       grid: null as SimGrid | null,
@@ -291,7 +288,15 @@ export function SimViewer({ modelId, plan, guideKey, onPosition, onUnavailable }
       const path = p.polyline;
       state.guide = { path, atM: progressAlong(path, { ...state.floor, z: 0 }).atM, endYaw: null };
     };
-    api.current = { setPlan, guide };
+    api.current = { setPlan };
+    const stop = () => { state.guide = null; state.turnTo = null; keys.clear(); };
+    if (controlRef) controlRef.current = {
+      stop,
+      turn: (degrees) => { stop(); state.turnTo = { yaw: state.yaw + degrees, pitch: state.pitch }; },
+      moving: () => Boolean(state.guide || state.turnTo),
+      heading: () => state.yaw,
+      guide: (plan) => { setPlan(plan); guide(); },
+    };
 
     // A mesh from /api/sim/mesh with its textures, drawn unlit (lighting is already in the photos).
     const loadMesh = async (prefer: "auto" | "matterpak") => {
@@ -594,6 +599,7 @@ export function SimViewer({ modelId, plan, guideKey, onPosition, onUnavailable }
     return () => {
       live = false;
       cancelAnimationFrame(frame);
+      if (controlRef) controlRef.current = null;
       abort.abort();
       observer.disconnect();
       api.current = null;
@@ -612,7 +618,7 @@ export function SimViewer({ modelId, plan, guideKey, onPosition, onUnavailable }
       renderer.dispose();
       renderer.domElement.remove();
     };
-  }, [modelId]);
+  }, [modelId, controlRef]);
 
   return (
     <div ref={host} className="absolute inset-0">

@@ -3,7 +3,7 @@
 // from the model's text, so what is drawn on screen is always the deterministic plan.
 import { createDeepAgent } from "deepagents";
 import { agentChatModel } from "../chatModel";
-import { flushTraces } from "../onboarding/agent";
+import { flushTraces } from "../tracing";
 import type { Detection } from "../../wayfinding/locate";
 import type { RoutePlan, SceneItem, StartPoint, WayfindingScene } from "../../wayfinding/types";
 import { wayfindingTools, type WayfindingRun } from "./tools";

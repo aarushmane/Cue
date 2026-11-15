@@ -27,8 +27,18 @@ export function useWayfinding(modelId: string, context: () => WayfindingContext)
   const [state, setState] = useState<WayfindingState>({ status: "idle" });
   const inflight = useRef<AbortController | null>(null);
   const rerouting = useRef<AbortController | null>(null);
+  const queued = useRef<WayfindingStart | null>(null);
   const latest = useRef(state);
   useEffect(() => { latest.current = state; }, [state]);
+  useEffect(() => () => { inflight.current?.abort(); rerouting.current?.abort(); }, []);
+  const cancel = useCallback(() => {
+    inflight.current?.abort(); rerouting.current?.abort(); queued.current = null;
+    setState((previous) => previous.status === "loading" ? { status: "idle" } : previous);
+  }, []);
+  const adopt = useCallback((query: string, reply: string, item: SceneItem | null, plan: RoutePlan) => {
+    inflight.current?.abort(); rerouting.current?.abort(); queued.current = null;
+    setState({ status: "ready", query, reply, item, plan });
+  }, []);
 
   const run = useCallback(async (query: string, body: Record<string, unknown>, agent: boolean) => {
     inflight.current?.abort();
@@ -67,7 +77,6 @@ export function useWayfinding(modelId: string, context: () => WayfindingContext)
   // One re-plan in flight at a time. Moving again meanwhile just records the latest position, which is sent as soon
   // as the current answer is in. (Cancelling the in-flight request instead starved slow devices: each new position
   // cancelled the previous answer before it could be shown.)
-  const queued = useRef<WayfindingStart | null>(null);
   const busy = useRef(false);
   const reroute = useCallback(async function next(start: WayfindingStart): Promise<void> {
     if (busy.current) { queued.current = start; return; }
@@ -96,6 +105,8 @@ export function useWayfinding(modelId: string, context: () => WayfindingContext)
 
   return {
     state,
+    cancel,
+    adopt,
     reroute,
     find: (query: string) => run(query, { query }, true),
     choose: (item: SceneItem) => run(item.name, { item_id: item.id }, false),

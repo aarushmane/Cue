@@ -13,3 +13,11 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 Read `DESIGN_SYSTEM.md` before changing any frontend UI. It combines the project's
 frontend guidance with shadcn/ui conventions. Use shared tokens and the local
 components in `components/ui` rather than introducing a second styling system.
+
+## Testing preference
+
+Prioritize implementation and keep verification lightweight. Do not add or run
+automated tests unless the user explicitly asks. The test suites and test tooling
+were removed at the user's request. Use targeted manual inspection or a relevant
+type/lint/build check only when it materially helps; do not run every check for
+routine UI changes.

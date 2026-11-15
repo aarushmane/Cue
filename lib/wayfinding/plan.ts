@@ -5,7 +5,7 @@
 // fallbacks, smoothing shortcuts, line of sight to the item — is checked against walls and shelf boxes with a clearance.
 // Goal: the reachable scan point that minimises (walking cost + distance to the item) and can see the item.
 // Directions and arrows are generated from geometry with fixed templates; no LLM writes them.
-import { classifyTurn } from "../routing/instructions";
+import { classifyTurn } from "./turns";
 import { dist2, headingDeg, length, lerp, normalize, segmentBlocked, segmentDistance, sub, turnDeg, v3 } from "./geometry";
 import { raycast } from "./mesh";
 import { aboutSteps } from "./steps";

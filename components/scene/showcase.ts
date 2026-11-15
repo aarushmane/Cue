@@ -20,6 +20,13 @@ const TO_API = "coordinatesToAPI" as MpSdk.Conversion.TransformType.Coordinates;
 export const toSdk = (sdk: MpSdk, p: Vec3): Vec3 => sdk.Conversion.basisChange(p, TO_SDK);
 export const toApi = (sdk: MpSdk, p: Vec3): Vec3 => sdk.Conversion.basisChange(p, TO_API);
 
+export function headingDegrees(sdk: MpSdk, pose: Pose): number {
+  const forward = cameraForward(sdk, pose, { w: 1000, h: 1000 });
+  const eye = toApi(sdk, pose.position);
+  const target = toApi(sdk, { x: pose.position.x + forward.x, y: pose.position.y + forward.y, z: pose.position.z + forward.z });
+  return Math.atan2(target.y - eye.y, target.x - eye.x) * 180 / Math.PI;
+}
+
 type V = { x: number; y: number; z: number };
 const dot = (a: V, b: V) => a.x * b.x + a.y * b.y + a.z * b.z;
 
@@ -66,7 +73,8 @@ export function projectorFor(sdk: MpSdk, pose: Pose, size: { w: number; h: numbe
 }
 
 /** Walk the route one scan point at a time, then turn to face the next point (or the item). */
-export async function stepAlong(sdk: MpSdk, waypointIds: string[], currentSweep: string, lookTarget: (nextIndex: number) => Vec3) {
+export async function stepAlong(sdk: MpSdk, waypointIds: string[], currentSweep: string, lookTarget: (nextIndex: number) => Vec3, signal?: AbortSignal) {
+  signal?.throwIfAborted();
   const at = waypointIds.indexOf(currentSweep);
   const next = Math.min(at + 1, waypointIds.length - 1);
   if (next < 0 || (at === next && at !== -1)) {
@@ -74,6 +82,7 @@ export async function stepAlong(sdk: MpSdk, waypointIds: string[], currentSweep:
     return;
   }
   await sdk.Sweep.moveTo(waypointIds[next], { transition: "transition.fly" as MpSdk.Sweep.Transition, transitionTime: 1200 });
+  signal?.throwIfAborted();
   await sdk.Camera.lookAt(toSdk(sdk, lookTarget(next)));
 }
 

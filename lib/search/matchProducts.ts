@@ -1,4 +1,4 @@
-import type { Product } from "../types";
+import type { Product } from "./types";
 
 // Phrases people say around the product name. Stripped before matching ("where can I find almond milk" → "almond milk").
 const FILLER = [

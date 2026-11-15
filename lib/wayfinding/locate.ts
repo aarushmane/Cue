@@ -7,7 +7,7 @@
 //    from a vision model or staff later — this module only does the geometry.
 import { resolveProduct } from "../search/matchProducts";
 import { FACES } from "./skybox";
-import type { Product } from "../types";
+import type { Product } from "../search/types";
 import { add, normalize, rayHitsBox, rotate, scale, triangulate, v3, type Ray } from "./geometry";
 import { raycast, type Surfaces } from "./mesh";
 import type { Obstacle, SceneItem, Vec3, Waypoint } from "./types";

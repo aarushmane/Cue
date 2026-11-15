@@ -4,7 +4,7 @@ This file governs frontend changes. Read it together with `AGENTS.md`. The origi
 
 ## Product direction
 
-StoreGuide is a spatial inspection tool. Its first screen is the usable scene, with quiet operational controls. The actual scan is the visual asset. Keep its geometry legible and the scene unframed; introduce panels only when a real workflow needs them. Avoid marketing composition, decorative sections, onboarding copy, nested cards, and a separate landing screen.
+StoreGuide is a spatial companion for blind and low-vision users. Its workspace pairs a usable scene and destination search with a voice interface. The actual scan is the visual asset. Keep its geometry legible and the scene unframed; introduce panels only when a real workflow needs them. Avoid marketing composition, decorative sections, onboarding copy, nested cards, and a separate landing screen.
 
 Do not display instructions about styling, shortcuts, implementation, or how the app works. Accessible names, brief action tooltips, actual data, and actionable loading/error states are appropriate. Store interaction documentation in the README and accessibility descriptions.
 
@@ -22,16 +22,30 @@ Do not display instructions about styling, shortcuts, implementation, or how the
 
 | Foundation | Standard |
 | --- | --- |
-| Color | Neutral surfaces, emerald for primary action/focus/success, amber for warnings, red for failures. Color supplements an icon or accessible state. |
-| Modes | Light values live in `:root`; dark overrides in `.dark`. The spatial workspace currently uses dark mode through `app/layout.tsx`. |
-| Typography | System sans stack, with Inter when locally available. Monospace for IDs and measurements. No remote-font dependency. |
+| Color | Deep purple primary actions, golden yellow route cues, warm white surfaces, dark plum text, and soft lavender supporting surfaces. Color supplements an icon or accessible state. |
+| Mode | The supplied palette is a light theme defined centrally in `:root`. The scene retains its photographed colors. |
+| Typography | Locally hosted Geist Sans variable font via `next/font/local`, with system fallbacks. Monospace for IDs and measurements. No runtime font requests to third parties. |
 | Type sizes | `text-label`: 12/16 px; `text-body`: 14/20 px; `text-heading`: 18/24 px. Fixed sizes with zero letter spacing. Use larger display type only for an actual hero. |
 | Spacing | Tailwind's 4 px scale. Use 4/8 px within compact controls, 12/16 px between groups, and 24 px for substantial separation. |
 | Shape | 4 px small, 6 px medium, 8 px large. Card and popover radii never exceed 8 px. The main scene has no decorative border or rounding. |
 | Controls | Stable dimensions; 44 × 44 px for viewer icon controls and touch targets. A hover, label, or loading state must not resize the control. |
 | Borders/elevation | One semantic border for separation. Small shadows for floating controls/popovers; no card treatment for whole page sections. |
 | Motion | 120 ms for feedback, 180 ms for transitions. Honor reduced motion; no decorative continuous animation. |
-| Scene | The Matterport Showcase embed fills the viewport. `--scene-background` is the only intentional hex token: the surface shown while the embed loads. |
+| Scene | The scene fills the right workspace region. `--route-color` and `--route-ink` style geometry overlays; `--scene-background` provides the loading surface. |
+
+## Supplied brand palette
+
+The user-supplied palette overrides the generic color guidance below: deep purple `#5E3984`, golden yellow `#FCD44A`, warm white `#FFFBEF`, dark plum `#291A38`, and soft lavender `#EDE5F5`. Wisteria `#CFA3EA` supports the waveform; `#831DC6` is the focus ring. Keep these values in global tokens. The original logo is preserved in `public/brand/logo.png` and reused as the application icon.
+
+On desktop the workspace uses a 1:3 column ratio: search and voice on the left, scene on the right. The logo and search sit at the top of the left panel, above the voice controls. Below 768 px, stack the panel after the scene. A single 44 px settings icon remains at the viewport's bottom left. Keep the UI limited to the map, search, logo, voice controls and functional settings; do not add marketing copy, product suggestions, or duplicate location labels.
+
+The voice panel captures microphone input only after an explicit button press. The waveform is analysed locally; during an active session, PCM audio is streamed to ElevenLabs for transcription and text is sent to the configured model provider for reasoning. The application does not persist microphone recordings. The server retains the ElevenLabs master key and issues a single-use transcription token to the browser. Show the actual off/connecting/listening/thinking/speaking state and actionable errors. Ending the session, unmounting, hiding the page, or device disconnection releases tracks, the audio context, the websocket, and pending work.
+
+Use three compact shadcn icon controls: replay response, enable/disable microphone, and stop speech and movement. Stop and Escape interrupt immediately while leaving the session connected. By default, “Hey Cue” in a partial transcript interrupts and opens a brief command window; ordinary background speech does not interrupt. Turning wake-word prompting off restores free-form speech onset interruption. Resuming movement requires a new request. Display only the current real transcript and response, without placeholder dialogue. During playback the same waveform displays the output analyser. See `docs/voice.md` for the loop and cancellation contract.
+
+Settings is a compact shadcn Popover, with a Select for ElevenLabs voices, a speaker icon preview, a bounded speed Slider, and Switches for voice responses, “Hey Cue” and spoken directions. No account key is displayed or stored in browser preferences. A missing Voices: Read permission is reported separately from invalid credentials; published voices and direct voice IDs remain usable. Use the existing 120/180 ms feedback tokens and reduced-motion support; add no decorative continuous animations.
+
+Wave bars represent logarithmic speech-frequency bands gated by the signal's RMS amplitude. A critically damped spring smooths each measured bar target; there are no random or canned wave animations. Reduced-motion mode presents a simple sound-level meter instead. Shared press/focus feedback uses 120 ms transitions; the route panel enters with a short 180 ms fade/translation.
 
 The full shadcn semantic contract includes `background/foreground`, `card`, `popover`, `primary`, `secondary`, `muted`, `accent`, `destructive`, `border`, `input`, `ring`, `chart-1…5`, and `sidebar` pairs. Project status tokens add `success` and `warning`. Add new tokens centrally and document their purpose here.
 
@@ -62,13 +76,9 @@ Use semantic HTML first. Preserve Radix keyboard navigation, focus management, a
 
 ## Verification and maintenance
 
-1. Run `npm run typecheck` and `npm run build` after frontend integration changes.
-2. Run `npm run check:ui` against the running app. This uses Playwright with installed Chrome (or `PW_CHANNEL=chromium`), saves desktop/mobile screenshots, checks that the Showcase embed loads and renders, reset, hover tooltips, fullscreen, responsive bounds, and theme tokens.
-3. Inspect the screenshots. Confirm the real asset is nonblank, correctly framed, and visually legible; check that controls do not collide or overflow. Do not accept a passing DOM check as proof of a rendered tour.
-4. When a dev server is needed, start it and share its actual URL. Reuse a server already serving this checkout; if its port belongs to something else, use another port.
-5. Document material changes to tokens, primitive variants, or interaction patterns here. Preserve the provided guidance below when updating this file.
+Follow the testing preference in `AGENTS.md`: prioritize implementation, keep verification lightweight, and do not add or run automated tests unless requested. The automated suites and their tooling have been removed. Use a targeted manual inspection or relevant type/lint/build check when it materially helps. Confirm UI changes fit the existing layout without overflow or overlapping controls.
 
-`npm run check:ui` defaults to `http://localhost:3000`; use `APP_URL` for another port and `UI_ARTIFACTS_DIR` for a different screenshot directory. Screenshots and generated verification output are ignored by Git.
+When a dev server is needed, reuse one serving this checkout and share its URL. Document material changes to tokens, primitive variants, or interaction patterns here, preserving the supplied guidance below.
 
 ## shadcn MCP
 

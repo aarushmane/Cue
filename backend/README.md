@@ -2,7 +2,7 @@
 
 Read-only FastAPI server alongside the existing Next.js app. Initialized with
 `uv init --app`; Python 3.12 is pinned in `.python-version`. Dependencies live in
-`pyproject.toml`, including the default `dev` group for pytest and Ruff.
+`pyproject.toml`, including the default `dev` group for Ruff.
 
 ## Start
 
@@ -102,14 +102,9 @@ Both routes are placeholders with TODOs for future implementation.
 Run from `backend/`:
 
 ```sh
-uv run pytest
 uv run ruff check .
 uv run ruff format --check .
 ```
-
-Tests use a mocked HTTP transport and never read or write the live database. They
-cover query scoping, published filters, pagination, missing rows, error handling,
-read-only routes, and CORS.
 
 Add dependencies with `uv add PACKAGE`, or development tools with
 `uv add --dev PACKAGE`. After the initial lockfile exists, `uv sync --locked`

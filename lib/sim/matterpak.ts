@@ -17,7 +17,7 @@ import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { inflateRawSync } from "node:zlib";
-import { graph } from "../costar/matterport";
+import { graph } from "../matterport/client";
 
 export type SimSource = "baked" | "matterpak";
 export type SimMeta = { modelId: string; source: SimSource; textures: string[]; vertices: number; indices: number; bytes: number; version?: string };

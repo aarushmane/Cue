@@ -66,7 +66,7 @@ const MIN_FOV = 35, MAX_FOV = 100;
  * (band, chevrons, destination ring and item pin). Drag to look, scroll to zoom, select a floor marker to move there;
  * markers show the places linked to where you stand.
  */
-export function PanoViewer({ modelId, sweepId, plan, faceKey, onSweeps, onMove, onUnavailable }: {
+export function PanoViewer({ modelId, sweepId, plan, faceKey, onSweeps, onMove, onUnavailable, controlRef }: {
   modelId: string;
   sweepId: string | null;
   plan: OkPlan | null;
@@ -75,6 +75,7 @@ export function PanoViewer({ modelId, sweepId, plan, faceKey, onSweeps, onMove, 
   onSweeps: (sweeps: PanoSweep[]) => void;
   onMove: (sweepId: string) => void;
   onUnavailable: (reason: string) => void;
+  controlRef?: import("react").RefObject<import("@/lib/voice/types").ViewControls | null>;
 }) {
   const glCanvas = useRef<HTMLCanvasElement>(null);
   const overlay = useRef<HTMLCanvasElement>(null);
@@ -86,6 +87,16 @@ export function PanoViewer({ modelId, sweepId, plan, faceKey, onSweeps, onMove, 
   // Mutable view state shared by the render loop and input handlers (no re-render per frame).
   const view = useRef({ yaw: 0, pitch: -12, fov: 75, sweep: null as PanoSweep | null, tween: 0 });
   const redraw = useRef<() => void>(() => {});
+  useEffect(() => {
+    if (!controlRef) return;
+    controlRef.current = {
+      stop: () => { view.current.tween++; },
+      turn: (degrees) => { view.current.tween++; view.current.yaw = wrap(view.current.yaw + degrees); redraw.current(); },
+      moving: () => false,
+      heading: () => view.current.yaw,
+    };
+    return () => { controlRef.current = null; };
+  }, [controlRef]);
   const props = useRef({ plan, sweeps, onMove });
   useEffect(() => { props.current = { plan, sweeps, onMove }; redraw.current(); }, [plan, sweeps, onMove]);
 
@@ -142,8 +153,8 @@ export function PanoViewer({ modelId, sweepId, plan, faceKey, onSweeps, onMove, 
 
     const ctx = top.getContext("2d")!;
     const css = getComputedStyle(top);
-    const color = css.getPropertyValue("--primary").trim() || "#10b981";
-    const ink = css.getPropertyValue("--primary-foreground").trim() || "#ffffff";
+    const color = css.getPropertyValue("--route-color").trim() || "#fcd44a";
+    const ink = css.getPropertyValue("--route-ink").trim() || "#ffffff";
     let frame = 0;
     let markers: { id: string; path: Path2D }[] = [];
 

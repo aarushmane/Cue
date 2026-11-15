@@ -8,28 +8,18 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "next typegen && tsc --noEmit",
-    "check:ui": "node scripts/check-ui.mjs",
     "property:add-example": "node --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/add-example-property.mjs",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:e2e": "playwright test && playwright test -c playwright.auth.config.ts",
-    "test:e2e:memory": "playwright test",
-    "test:e2e:auth": "playwright test -c playwright.auth.config.ts",
-    "seed:sql": "node scripts/gen-seed.mts",
-    "eval:localize": "node --env-file-if-exists=.env.local scripts/eval-localize.mts",
-    "wayfinding:catalog": "node scripts/save-catalog.mjs",
-    "check:costar": "node --env-file-if-exists=.env.local scripts/check-costar.mts",
-    "test:db": "bash scripts/test-db.sh"
+    "wayfinding:catalog": "node scripts/save-catalog.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.8.0",
+    "@elevenlabs/client": "^1.36.1",
     "@google/genai": "^3.3.0",
     "@langchain/anthropic": "^1.6.5",
     "@langchain/core": "^1.4.1",
     "@langchain/google-genai": "^2.3.6",
     "@langchain/langgraph": "^1.7.4",
     "@matterport/sdk": "^1.6.2",
-    "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.119.0",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.5.2",
@@ -47,7 +37,6 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@playwright/test": "^1.65.1",
     "@tailwindcss/postcss": "^4.3.5",
     "@types/node": "^24.19.2",
     "@types/react": "^19",
@@ -55,10 +44,8 @@
     "@types/three": "^0.160.0",
     "eslint": "^9",
     "eslint-config-next": "16.4.6",
-    "pngjs": "^7.0.0",
     "shadcn": "^4.23.0",
     "tailwindcss": "^4.3.5",
-    "typescript": "^5",
-    "vitest": "^5.1.0"
+    "typescript": "^5"
   }
 }

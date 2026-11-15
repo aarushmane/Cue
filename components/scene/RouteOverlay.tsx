@@ -19,8 +19,8 @@ export function RouteOverlay({ sdk, plan }: { sdk: MpSdk; plan: OkPlan }) {
     const el = canvas.current!;
     const ctx = el.getContext("2d")!;
     const css = getComputedStyle(el);
-    const color = css.getPropertyValue("--primary").trim() || "#10b981";
-    const ink = css.getPropertyValue("--primary-foreground").trim() || "#ffffff";
+    const color = css.getPropertyValue("--route-color").trim() || "#fcd44a";
+    const ink = css.getPropertyValue("--route-ink").trim() || "#ffffff";
     let pose: Pose | null = null;
     let frame = 0;
 
