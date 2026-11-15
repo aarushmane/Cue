@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sweep Exporter</title>
+<!--
+  Local-only tool: exports a Matterport space's sweep graph to JSON for matterport_agent.
+  Serve from matterport_agent/ with:  python3 -m http.server 8787 --bind 127.0.0.1 --directory exporter
+  Then open http://localhost:8787
+
+  The SDK key is typed into the page, held in memory only, and never saved, logged, or exported.
+  This page reads data; it does not draw arrows or move the camera.
+-->
+<style>
+  :root { --bg:#f7f7f5; --panel:#fff; --text:#1d1d1b; --muted:#5f5e5a; --border:#d6d4cc; --accent:#2f5d8a; --err:#a32020; --ok:#256b3a; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#171716; --panel:#22221f; --text:#ecebe6; --muted:#a8a69e; --border:#3b3a35; --accent:#7fb0e0; --err:#ff8f8f; --ok:#7fd49a; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.45 system-ui, sans-serif; }
+  main { display:grid; grid-template-columns: minmax(0,1fr) 360px; gap:16px; padding:16px; min-height:100vh; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  iframe { width:100%; height:min(78vh, 720px); border:1px solid var(--border); border-radius:8px; background:#000; }
+  aside { display:flex; flex-direction:column; gap:12px; }
+  section { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:12px; }
+  h1 { font-size:17px; margin:0 0 4px; } h2 { font-size:14px; margin:0 0 8px; }
+  label { display:block; font-size:13px; color:var(--muted); margin:8px 0 2px; }
+  input { width:100%; padding:7px 8px; border:1px solid var(--border); border-radius:6px; background:var(--bg); color:var(--text); font:inherit; }
+  button { margin-top:8px; padding:7px 12px; border:1px solid var(--accent); border-radius:6px; background:var(--accent); color:#fff; font:inherit; cursor:pointer; }
+  button.secondary { background:transparent; color:var(--accent); }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  code, .mono { font-family: ui-monospace, Menlo, monospace; font-size:12.5px; word-break:break-all; }
+  .muted { color:var(--muted); font-size:13px; }
+  .err { color:var(--err); white-space:pre-wrap; } .ok { color:var(--ok); }
+  ul { list-style:none; margin:0; padding:0; } li { display:flex; gap:8px; align-items:baseline; justify-content:space-between; padding:4px 0; border-top:1px solid var(--border); }
+  li button { margin:0; padding:2px 8px; }
+</style>
+</head>
+<body>
+<main>
+  <iframe id="showcase" title="Matterport space" allow="fullscreen; xr-spatial-tracking"></iframe>
+  <aside>
+    <section>
+      <h1>Sweep exporter</h1>
+      <p class="muted">Local tool for matterport_agent. Reads sweeps; draws nothing.</p>
+      <label for="model">Matterport model ID (the <code>m=</code> value in the share link)</label>
+      <input id="model" autocomplete="off" spellcheck="false">
+      <label for="key">SDK key (kept in memory only, never saved or exported)</label>
+      <input id="key" type="password" autocomplete="off" spellcheck="false">
+      <button id="connect">Connect</button>
+      <p id="status" class="muted" aria-live="polite">Not connected.</p>
+    </section>
+
+    <section>
+      <h2>Current sweep</h2>
+      <p class="muted">Move through the tour; the sweep you're standing on shows here.</p>
+      <p id="current" class="mono">—</p>
+      <button id="set-start" disabled>Use as starting point</button>
+      <p class="muted">Start: <span id="start" class="mono">not set</span></p>
+    </section>
+
+    <section>
+      <h2>Label a destination</h2>
+      <label for="dest-name">Name (e.g. Checkout)</label>
+      <input id="dest-name" autocomplete="off">
+      <label for="dest-aliases">Other names, comma-separated (optional)</label>
+      <input id="dest-aliases" autocomplete="off" placeholder="registers, tills">
+      <button id="add-dest" disabled>Label current sweep</button>
+      <ul id="dests"></ul>
+    </section>
+
+    <section>
+      <h2>Export</h2>
+      <button id="download" disabled>Download JSON</button>
+      <p class="muted">Save it as <code>matterport_agent/data/store-sweeps.json</code>.</p>
+      <p id="export-msg" aria-live="polite"></p>
+    </section>
+  </aside>
+</main>
+
+<script type="module">
+import { buildExport, chooseSweepIdField } from "./export-core.js";
+
+// Version string from Matterport's Embed SDK quickstart.
+const SDK_VERSION = "3.1.0-0-g1cd7e0997a";
+const $ = (id) => document.getElementById(id);
+
+const state = { modelId: null, collection: {}, current: null, start: null, destinations: [] };
+
+function setStatus(text, kind = "muted") { const el = $("status"); el.textContent = text; el.className = kind; }
+
+function idField() { return chooseSweepIdField(Object.values(state.collection)); }
+
+function currentId() {
+  const field = idField();
+  return field && state.current ? state.current[field] || null : null;
+}
+
+function render() {
+  const id = currentId();
+  $("current").textContent = id ?? (state.current ? "between sweeps" : "—");
+  $("set-start").disabled = !id;
+  $("add-dest").disabled = !id;
+  $("start").textContent = state.start ?? "not set";
+  $("download").disabled = Object.keys(state.collection).length === 0;
+  const list = $("dests");
+  list.replaceChildren(...state.destinations.map((d, i) => {
+    const li = document.createElement("li");
+    const text = document.createElement("span");
+    text.textContent = `${d.name} → `;
+    const code = document.createElement("span"); code.className = "mono"; code.textContent = d.sweep_id;
+    text.append(code);
+    const remove = document.createElement("button"); remove.className = "secondary"; remove.textContent = "Remove";
+    remove.onclick = () => { state.destinations.splice(i, 1); render(); };
+    li.append(text, remove);
+    return li;
+  }));
+}
+
+$("connect").onclick = async () => {
+  const modelId = $("model").value.trim();
+  const key = $("key").value.trim();
+  if (!modelId || !key) { setStatus("Enter both the model ID and the SDK key.", "err"); return; }
+  $("connect").disabled = true;
+  setStatus("Loading the space…");
+  try {
+    const iframe = $("showcase");
+    const loaded = new Promise((resolve) => iframe.addEventListener("load", resolve, { once: true }));
+    iframe.src = `https://my.matterport.com/show?m=${encodeURIComponent(modelId)}&play=1&applicationKey=${encodeURIComponent(key)}`;
+    await loaded;
+    const { connect } = await import(`https://api.matterport.com/sdk/bootstrap/${SDK_VERSION}/sdk.es6.js?applicationKey=${encodeURIComponent(key)}`);
+    const mpSdk = await connect(iframe);
+    await mpSdk.App.state.waitUntil((s) => s.phase === mpSdk.App.Phase.PLAYING);
+    state.modelId = modelId;
+    mpSdk.Sweep.data.subscribe({
+      onCollectionUpdated(collection) {
+        state.collection = { ...collection };
+        const n = Object.keys(collection).length;
+        const field = idField();
+        setStatus(field ? `Connected. ${n} sweeps loaded (IDs from "${field}").` : `Connected. ${n} sweeps loaded, but neighbor IDs don't match any ID field yet.`,
+                  field ? "ok" : "err");
+        render();
+      },
+    });
+    mpSdk.Sweep.current.subscribe((sweep) => { state.current = sweep; render(); });
+  } catch (error) {
+    // Never echo the key; the message is the SDK's or the browser's.
+    setStatus(`Couldn't connect: ${error?.message ?? error}\nCheck the model ID, that the SDK key allows localhost:8787, and that you can open this space in this browser.`, "err");
+    $("connect").disabled = false;
+  } finally {
+    $("key").value = "";  // drop the key from the form once it's been used
+  }
+};
+
+$("set-start").onclick = () => { state.start = currentId(); render(); };
+
+$("add-dest").onclick = () => {
+  const name = $("dest-name").value.trim();
+  if (!name) { $("export-msg").textContent = "Type a destination name first."; $("export-msg").className = "err"; return; }
+  const aliases = $("dest-aliases").value.split(",").map((a) => a.trim()).filter(Boolean);
+  state.destinations = state.destinations.filter((d) => d.name.toLowerCase() !== name.toLowerCase());
+  state.destinations.push({ name, sweep_id: currentId(), aliases });
+  $("dest-name").value = ""; $("dest-aliases").value = "";
+  render();
+};
+
+$("download").onclick = () => {
+  const msg = $("export-msg");
+  try {
+    const doc = buildExport({ modelId: state.modelId, collection: state.collection, startSweepId: state.start,
+                              destinations: state.destinations, sdkVersion: SDK_VERSION });
+    const blob = new Blob([JSON.stringify(doc, null, 2) + "\n"], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = "store-sweeps.json"; a.click();
+    URL.revokeObjectURL(a.href);
+    msg.textContent = `Exported ${doc.sweeps.length} sweeps, ${doc.destinations.length} destinations.`; msg.className = "ok";
+  } catch (error) {
+    msg.textContent = error.message; msg.className = "err";
+  }
+};
+
+render();
+</script>
+</body>
+</html>

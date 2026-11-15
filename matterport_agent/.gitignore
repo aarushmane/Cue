@@ -1,0 +1,10 @@
+# Real credentials and local environments must never be committed.
+.env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+# Real store exports stay local unless you choose to commit them.
+data/*.json
